@@ -575,7 +575,9 @@ impl EditorModel {
                 }
                 match normalize_score_notes(&self.notes) {
                     Ok(notes) => {
-                        let chosen = self.notes[index].clone();
+                        let Some(chosen) = self.notes.get(index).cloned() else {
+                            bail!("拖动目标已失效，请重新选择音符。");
+                        };
                         self.notes = notes;
                         self.selected = self.notes.iter().position(|n| *n == chosen);
                         self.push_history(before);
@@ -628,7 +630,17 @@ impl EditorModel {
         self.push_history(previous);
         Ok(true)
     }
+    // Keyboard edits supersede an unfinished pointer preview. Restore the
+    // committed score first, then derive the new edit and its undo snapshot.
+    fn begin_keyboard_edit(&mut self) -> Result<()> {
+        if self.read_only || !self.allow_note_edits || self.compact {
+            bail!("当前曲谱处于只读状态。");
+        }
+        self.cancel_drag();
+        Ok(())
+    }
     pub fn add_note(&mut self, time: f64, pitch: i32) -> Result<bool> {
+        self.begin_keyboard_edit()?;
         let start = (time / SNAP).round() * SNAP;
         let next = self
             .notes
@@ -650,6 +662,10 @@ impl EditorModel {
         self.commit(notes, Some(note))
     }
     pub fn delete_selected(&mut self) -> Result<bool> {
+        if self.selected.is_none() {
+            return Ok(false);
+        }
+        self.begin_keyboard_edit()?;
         let Some(index) = self.selected else {
             return Ok(false);
         };
@@ -658,6 +674,10 @@ impl EditorModel {
         self.commit(notes, None)
     }
     pub fn nudge(&mut self, time: f64, pitch: i32, length: f64) -> Result<bool> {
+        if self.selected.is_none() {
+            return Ok(false);
+        }
+        self.begin_keyboard_edit()?;
         let Some(index) = self.selected else {
             return Ok(false);
         };
@@ -676,6 +696,9 @@ impl EditorModel {
         !self.redo.is_empty() && !self.read_only && self.allow_note_edits && !self.compact
     }
     pub fn undo(&mut self) -> bool {
+        if self.begin_keyboard_edit().is_err() {
+            return false;
+        }
         if !self.can_undo() {
             return false;
         }
@@ -686,6 +709,9 @@ impl EditorModel {
         true
     }
     pub fn redo(&mut self) -> bool {
+        if self.begin_keyboard_edit().is_err() {
+            return false;
+        }
         if !self.can_redo() {
             return false;
         }

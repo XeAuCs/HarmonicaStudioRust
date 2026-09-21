@@ -7,6 +7,83 @@ fn note(pitch: i32, start: f64, end: f64) -> Note {
         velocity: 80,
     }
 }
+fn drag_second(e: &mut EditorModel) -> (f64, f64) {
+    let n = &e.notes[1];
+    let (x, y) = (
+        e.x_at(n.start + 0.2),
+        e.y_at(n.pitch) + e.row_height() / 2.0,
+    );
+    e.begin_pointer(x, y, false);
+    assert!(matches!(e.drag, Some(Drag::Note { index: 1, .. })));
+    (x, y)
+}
+#[test]
+fn drag_delete_release_does_not_panic_and_undo_restores_once() {
+    let mut e = EditorModel::default();
+    let original = vec![note(60, 0.0, 0.5), note(62, 1.0, 1.5)];
+    e.set_document(&original, None);
+    let (x, _) = drag_second(&mut e);
+    assert!(e.delete_selected().unwrap());
+    assert!(!e.end_pointer(x).unwrap().changed);
+    assert_eq!(e.notes, original[..1]);
+    assert!(e.undo());
+    assert_eq!(e.notes, original);
+    assert!(!e.can_undo());
+    assert!(e.redo());
+    assert_eq!(e.notes, original[..1]);
+}
+#[test]
+fn drag_delete_move_does_not_resurrect_notes() {
+    let mut e = EditorModel::default();
+    e.set_document(&[note(60, 0.0, 0.5), note(62, 1.0, 1.5)], None);
+    let (x, y) = drag_second(&mut e);
+    e.move_pointer(x + e.zoom * 0.2, y);
+    e.delete_selected().unwrap();
+    e.move_pointer(x + e.zoom * 0.4, y);
+    assert_eq!(e.notes, vec![note(60, 0.0, 0.5)]);
+    e.cancel_drag();
+    assert_eq!(e.notes.len(), 1);
+    assert!(e.undo());
+    assert_eq!(e.notes[1], note(62, 1.0, 1.5));
+}
+#[test]
+fn drag_keyboard_edit_cancels_preview_before_nudge_and_add() {
+    let mut e = EditorModel::default();
+    e.set_document(&[note(60, 0.0, 0.5), note(62, 1.0, 1.5)], None);
+    let (x, y) = drag_second(&mut e);
+    e.move_pointer(x + e.zoom * 0.2, y);
+    e.nudge(0.0, 1, 0.0).unwrap();
+    e.move_pointer(x + e.zoom * 0.4, y);
+    assert!(!e.end_pointer(x).unwrap().changed);
+    assert_eq!(e.notes[1], note(63, 1.0, 1.5));
+    let (x, y) = drag_second(&mut e);
+    e.move_pointer(x + e.zoom * 0.2, y);
+    e.add_note(2.0, 65).unwrap();
+    e.cancel_drag();
+    assert_eq!(e.notes.len(), 3);
+    assert_eq!(e.notes[1], note(63, 1.0, 1.5));
+}
+#[test]
+fn drag_undo_redo_do_not_restore_stale_preview_on_release() {
+    let mut e = EditorModel::default();
+    e.set_document(&[note(60, 0.0, 0.5)], None);
+    e.add_note(1.0, 62).unwrap();
+    let (x, y) = drag_second(&mut e);
+    e.move_pointer(x + e.zoom * 0.2, y);
+    assert!(e.undo());
+    assert!(!e.end_pointer(x).unwrap().changed);
+    assert_eq!(e.notes.len(), 1);
+    assert!(e.redo());
+    assert_eq!(e.notes[1], note(62, 1.0, 1.4));
+    e.nudge(0.0, 1, 0.0).unwrap();
+    e.undo();
+    let (x, y) = drag_second(&mut e);
+    e.move_pointer(x + e.zoom * 0.2, y);
+    assert!(e.redo());
+    e.move_pointer(x + e.zoom * 0.4, y);
+    assert!(!e.end_pointer(x).unwrap().changed);
+    assert_eq!(e.notes[1], note(63, 1.0, 1.4));
+}
 #[test]
 fn invalid_drag_rolls_back_without_polluting_history() {
     let mut e = EditorModel::default();
