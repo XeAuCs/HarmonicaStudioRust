@@ -20,7 +20,17 @@ enum Command {
         file: Option<PathBuf>,
     },
     /// 查看 MIDI 声部与推荐分数
-    Inspect { file: PathBuf },
+    Inspect {
+        file: PathBuf,
+        #[arg(long, default_value_t = 0, allow_hyphen_values = true)]
+        transpose: i32,
+        #[arg(long)]
+        no_auto_octave: bool,
+        #[arg(long)]
+        phrase_octave: bool,
+        #[arg(long, default_value = "sustain", value_parser = ["sustain", "highest", "continuous"])]
+        mode: String,
+    },
     /// 提取旋律并导出工程、MIDI、AHK 与 WAV
     Convert {
         file: PathBuf,
@@ -88,11 +98,28 @@ fn run(cli: Cli) -> Result<()> {
                 anyhow::bail!("此构建未启用 Windows 桌面，请使用默认 desktop 功能编译。");
             }
         }
-        Some(Command::Inspect { file }) => {
+        Some(Command::Inspect {
+            file,
+            transpose,
+            no_auto_octave,
+            phrase_octave,
+            mode,
+        }) => {
             let (parts, names) = midi::read_midi(&file)?;
-            serde_json::Value::Array(melody::rank_parts(&parts,&names).into_iter().map(|((track,channel),score)| {
-                serde_json::json!({"track":track,"channel":channel+1,"name":names.get(&track).cloned().unwrap_or_default(),"notes":parts[&(track,channel)].len(),"recommendation_score":(score*1000.0).round()/1000.0})
-            }).collect())
+            let options = Options {
+                transpose,
+                auto_octave: !no_auto_octave,
+                phrase_octave,
+                melody_mode: mode,
+                ..Options::default()
+            };
+            options.validate()?;
+            let mut rows = Vec::new();
+            for ((track, channel), score) in melody::rank_parts(&parts, &names) {
+                let (_, fit) = melody::fit_part(&parts[&(track, channel)], &options)?;
+                rows.push(serde_json::json!({"track":track,"channel":channel+1,"name":names.get(&track).cloned().unwrap_or_default(),"notes":parts[&(track,channel)].len(),"recommendation_score":score,"fit":fit,"fit_options":options}));
+            }
+            serde_json::Value::Array(rows)
         }
         Some(Command::Convert {
             file,

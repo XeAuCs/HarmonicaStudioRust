@@ -155,60 +155,9 @@ pub fn simplify(notes: &[Note], mode: &str, trim: bool) -> Vec<Note> {
         })
         .collect()
 }
-#[derive(Clone, Debug)]
-pub struct PartFeatures {
-    pub monophony: f64,
-    pub coverage: f64,
-    pub continuity: f64,
-    pub register: f64,
-    pub duration: f64,
-}
-pub fn part_features(notes: &[Note], song_start: f64, song_end: f64) -> PartFeatures {
-    if notes.is_empty() {
-        return PartFeatures {
-            monophony: 0.0,
-            coverage: 0.0,
-            continuity: 0.0,
-            register: 0.0,
-            duration: 0.0,
-        };
-    }
-    let mut events: Vec<(f64, i32)> = notes
-        .iter()
-        .flat_map(|n| [(n.start, 1), (n.end, -1)])
-        .collect();
-    events.sort_by(|a, b| a.0.total_cmp(&b.0));
-    let mut active = 0;
-    let mut last = events[0].0;
-    let mut sounding = 0.0;
-    let mut overlapping = 0.0;
-    for (time, change) in events {
-        if active > 0 {
-            sounding += time - last;
-        }
-        if active > 1 {
-            overlapping += time - last;
-        }
-        active += change;
-        last = time;
-    }
-    let line = simplify(notes, "highest", false);
-    let intervals: Vec<_> = line
-        .windows(2)
-        .map(|n| (n[0].pitch - n[1].pitch).abs())
-        .collect();
-    PartFeatures {
-        monophony: 1.0 - overlapping / sounding.max(0.001),
-        coverage: sounding / (song_end - song_start).max(0.001),
-        continuity: intervals
-            .iter()
-            .map(|&i| (1.0 - i as f64 / 24.0).max(0.0))
-            .sum::<f64>()
-            / intervals.len().max(1) as f64,
-        register: ((median(notes.iter().map(|n| n.pitch as f64)) - 36.0) / 48.0).clamp(0.0, 1.0),
-        duration: (median(notes.iter().map(|n| n.end - n.start)) / 0.25).min(1.0),
-    }
-}
+#[path = "part_features.rs"]
+mod features;
+pub use features::{PartFeatures, part_features};
 #[path = "recommendation.rs"]
 mod recommendation;
 pub use recommendation::rank_parts;
@@ -327,6 +276,25 @@ pub fn prepare(parts: &Parts, names: &TrackNames, options: &Options) -> Result<(
         });
     let key = key.ok_or_else(|| anyhow::anyhow!("所选音轨或通道没有可用音符。"))?;
     let raw = &parts[&key];
+    let (playable, mut report) = fit_part(raw, options)?;
+    ensure!(
+        !playable.is_empty(),
+        "所有音符都超出口琴音域，请开启自动八度或调整移调。"
+    );
+    ensure!(
+        playable.last().unwrap().end <= MAX_SECONDS,
+        "演奏超过 20 分钟，请先裁剪曲谱或提高速度。"
+    );
+    report["track"] = json!(key.0);
+    report["channel"] = json!(key.1 + 1);
+    report["track_name"] = json!(names.get(&key.0).cloned().unwrap_or_default());
+    Ok((playable, report))
+}
+
+/// Apply the real extraction and pitch fitting pipeline to one part, independently
+/// of melody ranking. Zero retained notes is a valid fit result (prepare rejects it).
+pub fn fit_part(raw: &[Note], options: &Options) -> Result<(Vec<Note>, Value)> {
+    options.validate()?;
     let notes = simplify(raw, &options.melody_mode, options.trim_silence);
     ensure!(!notes.is_empty(), "所选声部提取后没有可用音符。");
     let weights = note_weights(&notes);
@@ -376,18 +344,10 @@ pub fn prepare(parts: &Parts, names: &TrackNames, options: &Options) -> Result<(
         a["start"] = json!(a["start"].as_f64().unwrap() / options.speed);
         a["end"] = json!(a["end"].as_f64().unwrap() / options.speed);
     }
-    ensure!(
-        !playable.is_empty(),
-        "所有音符都超出口琴音域，请开启自动八度或调整移调。"
-    );
-    ensure!(
-        playable.last().unwrap().end <= MAX_SECONDS,
-        "演奏超过 20 分钟，请先裁剪曲谱或提高速度。"
-    );
     let adjusted: usize = adjustments
         .iter()
         .map(|a| a["notes"].as_u64().unwrap_or(0) as usize)
         .sum();
-    let report = json!({"track":key.0,"channel":key.1+1,"track_name":names.get(&key.0).cloned().unwrap_or_default(),"source_notes":raw.len(),"melody_notes":playable.len(),"removed_polyphony":raw.len()-notes.len(),"dropped_out_of_range":notes.len()-playable.len(),"transpose_semitones":shift,"speed":options.speed,"octave_adjustments":adjustments,"phrase_adjusted_notes":adjusted,"melody_mode":options.melody_mode});
+    let report = json!({"source_notes":raw.len(),"extracted_notes":notes.len(),"range_retention":playable.len() as f64 / notes.len() as f64,"source_retention":playable.len() as f64 / raw.len() as f64,"melody_notes":playable.len(),"removed_polyphony":raw.len()-notes.len(),"dropped_out_of_range":notes.len()-playable.len(),"transpose_semitones":shift,"speed":options.speed,"octave_adjustments":adjustments,"phrase_adjusted_notes":adjusted,"melody_mode":options.melody_mode});
     Ok((playable, report))
 }

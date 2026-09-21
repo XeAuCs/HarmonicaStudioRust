@@ -9,6 +9,8 @@ mod melody;
 mod midi;
 #[path = "core_contracts/project.rs"]
 mod project;
+#[path = "core_contracts/recommendation.rs"]
+mod recommendation;
 #[path = "core_contracts/support.rs"]
 mod support;
 #[path = "core_contracts/transport.rs"]
