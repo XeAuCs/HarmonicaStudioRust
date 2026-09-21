@@ -83,6 +83,7 @@ input[type="range"]:disabled { cursor: default; opacity: .5; }
 .search-field input::placeholder { color: var(--muted); opacity: .9; }
 .search-field input::-webkit-search-cancel-button { display: none; }
 .song-list { list-style: none; padding: 0; margin: 0; }
+.song-list:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .song-list li { border-bottom: 1px solid var(--line); }
 .song-button { min-height: 65px; width: 100%; display: flex; align-items: center; gap: 12px; text-align: left; border: 0; border-radius: 0; background: transparent; padding: 12px 0; }
 .song-button:not(:disabled):active { background: var(--surface); }
@@ -119,6 +120,17 @@ footer { margin-top: 32px; padding-top: 12px; color: var(--muted); font-size: 10
   .song-list { display: block; }
 }
 /* Short landscape viewports remain scrollable; controls never get clipped. */
+@media (orientation: landscape) {
+  .song-list {
+    max-height: clamp(160px, calc(100vh - 290px), 520px);
+    max-height: clamp(160px, calc(100svh - 290px), 520px);
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+    scrollbar-gutter: stable;
+    padding-right: 12px;
+  }
+  .song-button { min-height: 64px; }
+}
 @media (orientation: landscape) and (max-height: 500px) {
   .masthead { padding-bottom: 12px; }
   .score-cover { height: 130px; margin-top: 16px; margin-bottom: 12px; }

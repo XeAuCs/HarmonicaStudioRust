@@ -62,7 +62,7 @@
         <div class="section-heading"><h2 id="library-heading">曲库<span class="library-count" id="library-count">—</span></h2><button class="icon-button" id="refresh" type="button" aria-label="刷新曲库" title="刷新曲库" disabled><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M19 8a8 8 0 1 0 1 7M19 3v5h-5"/></svg></button></div>
         <div class="search-field"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></svg><label class="visually-hidden" for="search">搜索曲目</label><input id="search" type="search" placeholder="搜索曲目" autocomplete="off" spellcheck="false" enterkeyhint="search"><button id="clear-search" class="icon-button" type="button" aria-label="清空搜索" hidden><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17"/></svg></button></div>
         <p class="library-empty" id="library-empty">连接后显示电脑曲库</p>
-        <ol class="song-list" id="song-list"></ol>
+        <ol class="song-list" id="song-list" tabindex="0" aria-label="曲库曲目"></ol>
       </section>
     </main>
     <footer>同一局域网 · 连接由电脑提供</footer>
