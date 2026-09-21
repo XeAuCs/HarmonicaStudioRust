@@ -322,7 +322,9 @@ impl Studio {
                     p.library_folder = path.to_string_lossy().into_owned();
                 }
             }
-            Message::Speed(Some(v)) => self.options.speed = v,
+            Message::Speed(Some(v)) if v.is_finite() => {
+                self.options.speed = (v.clamp(0.25, 2.0) * 100.0).round() / 100.0;
+            }
             Message::Transpose(Some(v)) => self.options.transpose = v.round() as i32,
             Message::Mode(Some(i)) => {
                 if let Some(mode) = ["sustain", "highest", "continuous"].get(i) {

@@ -76,7 +76,9 @@ $taskCargo = Get-Cargo
 
 `scripts\build.ps1` 是正式发布的唯一入口：它串行执行测试、构建、许可证收集、成品自测和安全安装。首次构建可能准备固定版本的 Windows App SDK / WebView2 运行依赖；不要绕过现有缓存校验和许可证检查，也不要手工拼接发布流程。
 
-版本以 `Cargo.toml` 为准；默认保持版本，用户明确要求时才通过 `-Version` 更新。程序运行中或用户要求稍后安装时，使用 `scripts/build.ps1 -DistPath .\build\preview-release`，输出为该父目录下的 `HarmonicaStudio/`；暂存打包完成不等于已经更新正式版。
+版本以 `Cargo.toml` 为准。按用户要求，后续功能改动或问题修复交付时主动更新版本号，并同步 `Cargo.lock` 中本项目的版本；未指定目标版本时，常规修复递增补丁号。同一批修改只更新一次，交付前检查已有版本改动，避免重复递增；纯文档修改不单独升版。提交和推送时包含对应版本文件，并在交付说明中写明版本号。打包脚本仍保留默认不更新版本的交互，需要打包时通过 `-Version` 指定本次目标版本。
+
+程序运行中或用户要求稍后安装时，使用 `scripts/build.ps1 -DistPath .\build\preview-release`，输出为该父目录下的 `HarmonicaStudio/`；暂存打包完成不等于已经更新正式版。
 
 便携版必须整体移动，外层保留启动器 `HarmonicaStudio.exe`、`samples/`、`data/`、使用说明和 `program/`。内部主程序、运行 DLL、语言资源、`assets/` 和 `third_party/` 位于 `program/`。默认曲库、个人数据相对于外层便携根目录，资源相对于内部主程序；显式外部曲库和 `HARMONICA_STUDIO_HOME` 覆盖必须继续有效。安装时保留已有 `samples/`、`data/` 及用户文件；旧布局迁移仅处理新包清单对应文件和明确列出的废弃程序文件，内容不同或已废弃的旧文件保留备份。程序运行时先让用户保存并正常关闭。
 
