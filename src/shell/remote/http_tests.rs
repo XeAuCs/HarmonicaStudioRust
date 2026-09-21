@@ -2,6 +2,56 @@
 use super::*;
 
 #[test]
+fn idle_browser_preconnection_closes_without_an_unsolicited_error_page() {
+    let mut server = RemoteServer::start("127.0.0.1", 0).unwrap();
+    let mut stream = TcpStream::connect(("127.0.0.1", server.port)).unwrap();
+    stream
+        .set_read_timeout(Some(Duration::from_secs(6)))
+        .unwrap();
+    // Edge may preconnect while the user is still entering the URL. An error
+    // queued before any request can become the subsequent navigation's page.
+    let mut response = Vec::new();
+    stream.read_to_end(&mut response).unwrap();
+    assert!(
+        response.is_empty(),
+        "idle connection received an HTTP response"
+    );
+    assert!(get(&server, "/", false).starts_with("HTTP/1.0 200"));
+    server.stop();
+}
+
+#[test]
+fn incomplete_command_disconnect_never_executes_or_returns_a_page() {
+    let mut server = RemoteServer::start("127.0.0.1", 0).unwrap();
+    let mut stream = TcpStream::connect(("127.0.0.1", server.port)).unwrap();
+    stream
+        .set_read_timeout(Some(Duration::from_secs(6)))
+        .unwrap();
+    write!(stream, "POST /api/command HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nAuthorization: Bearer {}\r\nContent-Type: application/json\r\nContent-Length: 40\r\n\r\n{{", server.port, server.token).unwrap();
+    stream.shutdown(std::net::Shutdown::Write).unwrap();
+    let mut response = Vec::new();
+    stream.read_to_end(&mut response).unwrap();
+    assert!(response.is_empty());
+    assert!(server.take_commands().is_empty());
+    server.stop();
+}
+
+#[test]
+fn malformed_request_still_returns_a_readable_bad_request() {
+    let mut server = RemoteServer::start("127.0.0.1", 0).unwrap();
+    let mut stream = TcpStream::connect(("127.0.0.1", server.port)).unwrap();
+    stream
+        .set_read_timeout(Some(Duration::from_secs(6)))
+        .unwrap();
+    stream.write_all(b"INVALID\r\n\r\n").unwrap();
+    let mut response = String::new();
+    stream.read_to_string(&mut response).unwrap();
+    assert!(response.starts_with("HTTP/1.0 400"));
+    assert!(response.contains("请求格式不正确，请刷新页面重试。"));
+    server.stop();
+}
+
+#[test]
 fn browser_request_headers_can_arrive_in_separate_network_packets() {
     let mut server = RemoteServer::start("127.0.0.1", 0).unwrap();
     for path in ["/", "/remote.js"] {

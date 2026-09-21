@@ -1,6 +1,6 @@
 [package]
 name = "harmonica-studio"
-version = "2.1.16"
+version = "2.1.17"
 edition = "2024"
 rust-version = "1.95"
 description = "口琴工坊 Rust / WinUI 3"

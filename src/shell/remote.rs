@@ -111,7 +111,7 @@ impl RemoteServer {
                             let _ = thread::Builder::new().name("harmonica-http".into()).spawn(
                                 move || {
                                     let _guard = guard;
-                                    if handle_request(
+                                    if let Err(failure) = handle_request(
                                         &mut stream,
                                         &hosts,
                                         port,
@@ -119,16 +119,20 @@ impl RemoteServer {
                                         &data,
                                         &tx,
                                         &stopped,
-                                    )
-                                    .is_err()
-                                    {
-                                        let _ = respond(
-                                            &mut stream,
-                                            400,
-                                            b"{\"ok\":false}",
-                                            "application/json",
-                                            false,
-                                        );
+                                    ) {
+                                        // A browser can open a speculative connection
+                                        // without sending a request. Do not queue an
+                                        // unsolicited 400 when it times out: that can
+                                        // become the browser's next navigation response.
+                                        // Also never append a second HTTP response after
+                                        // a failed socket write or a disconnected body.
+                                        if failure.downcast_ref::<std::io::Error>().is_none() {
+                                            let _ = error(
+                                                &mut stream,
+                                                400,
+                                                "请求格式不正确，请刷新页面重试。",
+                                            );
+                                        }
                                     }
                                 },
                             );
