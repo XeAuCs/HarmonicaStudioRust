@@ -183,15 +183,20 @@ impl Studio {
         }
     }
     fn filtered_library(&self) -> Vec<usize> {
-        self.controller
-            .as_ref()
-            .map_or_else(Vec::new, |c| {
-                let query = self.library_query.trim().to_lowercase();
-                c.library.iter().enumerate().filter(|(_, entry)| {
-                    query.split_whitespace().all(|term| entry.title.to_lowercase().contains(term)
-                        || entry.file.to_lowercase().contains(term))
-                }).map(|(index, _)| index).collect()
-            })
+        self.controller.as_ref().map_or_else(Vec::new, |c| {
+            let query = self.library_query.trim().to_lowercase();
+            c.library()
+                .iter()
+                .enumerate()
+                .filter(|(_, entry)| {
+                    query.split_whitespace().all(|term| {
+                        entry.title.to_lowercase().contains(term)
+                            || entry.file.to_lowercase().contains(term)
+                    })
+                })
+                .map(|(index, _)| index)
+                .collect()
+        })
     }
     fn rebuild_canvases(&mut self) {
         if let Some(sender) = self.error_sender.clone() {
@@ -220,17 +225,17 @@ impl Studio {
                 return;
             };
             let mut e = self.editor.borrow_mut();
-            if self.seen_document != c.state.document_id {
-                if let Some(p) = &c.state.project {
+            if self.seen_document != c.state().document_id {
+                if let Some(p) = &c.state().project {
                     e.set_document(&p.notes, p.highlight);
                 } else {
                     e.set_document(&[], None);
                 }
-                self.editor_tab = c.state.project.is_some() || c.preferences.compact;
-                self.seen_document = c.state.document_id;
-                self.seen_revision = c.state.revision;
+                self.editor_tab = c.state().project.is_some() || c.preferences().compact;
+                self.seen_document = c.state().document_id;
+                self.seen_revision = c.state().revision;
                 self.options = c
-                    .state
+                    .state()
                     .project
                     .as_ref()
                     .and_then(|p| p.options.as_ref())
@@ -239,18 +244,18 @@ impl Studio {
                         c.default_options()
                             .unwrap_or_else(|_| c.conversion_options())
                     });
-            } else if self.seen_revision != c.state.revision && !e.is_dragging() {
-                if let Some(p) = &c.state.project {
+            } else if self.seen_revision != c.state().revision && !e.is_dragging() {
+                if let Some(p) = &c.state().project {
                     e.sync_notes(&p.notes, p.highlight);
                 }
-                self.seen_revision = c.state.revision;
+                self.seen_revision = c.state().revision;
             }
         }
         let requested = match self.controller.as_ref() {
             Some(c) => self
                 .settings_draft
                 .as_ref()
-                .unwrap_or(&c.preferences)
+                .unwrap_or(c.preferences())
                 .theme
                 .clone(),
             None => return,
@@ -264,34 +269,34 @@ impl Studio {
                 return;
             };
             let mut e = self.editor.borrow_mut();
-            e.set_compact(c.preferences.compact);
-            e.read_only = c.busy() || c.state.transition.is_some();
+            e.set_compact(c.preferences().compact);
+            e.read_only = c.busy() || c.state().transition.is_some();
             e.allow_note_edits = c.capabilities().can_edit;
             e.sync_transport(
-                c.state.logical_seek,
-                c.state.show_cursor,
-                c.state.transport == Transport::Playing,
+                c.state().logical_seek,
+                c.state().show_cursor,
+                c.state().transport == Transport::Playing,
             );
             let mut timeline = self.timeline.borrow_mut();
             if !timeline.dragging {
-                timeline.position = c.state.position;
+                timeline.position = c.state().position;
             }
-            timeline.duration = if c.state.preview_duration > 0.0 {
-                c.state.preview_duration
+            timeline.duration = if c.state().preview_duration > 0.0 {
+                c.state().preview_duration
             } else {
-                c.state.score_duration
+                c.state().score_duration
             };
-            timeline.highlight = c
-                .state
-                .project
-                .as_ref()
-                .and_then(|p| p.highlight)
-                .map(|value| {
-                    c.state
-                        .result
-                        .as_ref()
-                        .map_or(value, |r| r.to_audio.map(value))
-                });
+            timeline.highlight =
+                c.state()
+                    .project
+                    .as_ref()
+                    .and_then(|p| p.highlight)
+                    .map(|value| {
+                        c.state()
+                            .result
+                            .as_ref()
+                            .map_or(value, |r| r.to_audio.map(value))
+                    });
         }
     }
     fn schedule(&mut self, context: &ComponentContext<Self>) {
@@ -300,7 +305,7 @@ impl Studio {
         let delay = if self
             .controller
             .as_ref()
-            .is_some_and(|c| c.state.transport == Transport::Playing)
+            .is_some_and(|c| c.state().transport == Transport::Playing)
         {
             8
         } else {
@@ -316,12 +321,12 @@ impl Studio {
             if !c.capabilities().can_save {
                 return;
             }
-            self.save_version = Some((c.state.document_id, c.state.revision));
+            self.save_version = Some((c.state().document_id, c.state().revision));
         }
         let name = self
             .controller
             .as_ref()
-            .and_then(|c| c.state.project.as_ref())
+            .and_then(|c| c.state().project.as_ref())
             .map_or("曲谱".to_owned(), |p| p.title.clone());
         if !SaveFilePicker::new()
             .title("另存口琴工程")
@@ -399,7 +404,7 @@ impl Component for Studio {
             .map_or_else(Options::default, |c| c.conversion_options());
         let committed_theme = controller
             .as_ref()
-            .map(|c| c.preferences.theme.clone())
+            .map(|c| c.preferences().theme.clone())
             .unwrap_or_else(|| "paper".into());
         let mut app = Self {
             controller,
@@ -439,7 +444,7 @@ impl Component for Studio {
             part_rows: RefCell::new((u64::MAX, 0, Vec::new())),
         };
         if app.settings {
-            app.settings_draft = app.controller.as_ref().map(|c| c.preferences.clone());
+            app.settings_draft = app.controller.as_ref().map(|c| c.preferences().clone());
         }
         app.perform(|c| c.refresh_library());
         let open = input
@@ -490,7 +495,7 @@ fn open_document(
     {
         c.open_path(path)
     } else {
-        c.load_file(path, options, c.preferences.compact, false)
+        c.load_file(path, options, c.preferences().compact, false)
     }
 }
 pub fn run(open: Option<PathBuf>, open_remote: bool) -> Result<()> {

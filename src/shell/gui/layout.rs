@@ -6,12 +6,12 @@ impl Studio {
         let compact = self
             .controller
             .as_ref()
-            .is_some_and(|c| c.preferences.compact);
+            .is_some_and(|c| c.preferences().compact);
         context.window_title(
             if self
                 .controller
                 .as_ref()
-                .is_some_and(|c| c.state.project_dirty())
+                .is_some_and(|c| c.state().project_dirty())
             {
                 "● 口琴工坊 · Harmonica Studio"
             } else {
@@ -76,12 +76,12 @@ impl Studio {
                     )),
             ));
         let filename = c
-            .state
+            .state()
             .project
             .as_ref()
             .map(|v| v.title.clone())
             .or_else(|| {
-                c.state
+                c.state()
                     .source
                     .as_ref()
                     .and_then(|f| f.file_name())
@@ -101,7 +101,7 @@ impl Studio {
                         .margin(Thickness::new(12.0, 0.0, 12.0, 0.0))
                         .content(ui_button(
                             context,
-                            &format!("曲库 · {}  ⌄", c.library.len()),
+                            &format!("曲库 · {}  ⌄", c.library().len()),
                             Message::LibraryMenu,
                             enabled,
                             false,
@@ -144,12 +144,12 @@ impl Studio {
             ));
         let status = if !self.error.is_empty() {
             self.error.clone()
-        } else if !c.state.save_error.is_empty() {
-            c.state.save_error.clone()
-        } else if !c.state.library_error.is_empty() {
-            c.state.library_error.clone()
+        } else if !c.state().save_error.is_empty() {
+            c.state().save_error.clone()
+        } else if !c.state().library_error.is_empty() {
+            c.state().library_error.clone()
         } else {
-            c.state.message.clone()
+            c.state().message.clone()
         };
         let bottom = Grid::new()
             .columns([GridLength::STAR, GridLength::Auto])

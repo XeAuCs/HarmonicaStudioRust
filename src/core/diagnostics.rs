@@ -171,10 +171,22 @@ pub fn diagnose(notes: u32, repeat: u32, scenario: &str, timeout_seconds: u64) -
     };
     let mut samples = Vec::new();
     for run in 0..repeat {
-        let mut controller = AppController::silent(workspace.path().join(format!("run-{run}")))?;
+        let home = workspace.path().join(format!("run-{run}"));
+        if scenario == "library" {
+            fs::create_dir_all(&home)?;
+            let preferences = crate::preferences::Preferences {
+                library_folder: library.to_string_lossy().into_owned(),
+                ..Default::default()
+            };
+            crate::preferences::save_preferences(&home.join("preferences.json"), &preferences)?;
+        }
+        let mut controller = AppController::silent(home)?;
         controller.set_project(original.clone())?;
         if scenario == "library" {
-            controller.preferences.library_folder = library.to_string_lossy().into_owned();
+            ensure!(
+                !controller.library_refreshing() && controller.state().library_revision == 0,
+                "诊断计时前不应触发曲库扫描。"
+            );
         }
         let start = Instant::now();
         match scenario {
@@ -200,8 +212,12 @@ pub fn diagnose(notes: u32, repeat: u32, scenario: &str, timeout_seconds: u64) -
         let elapsed_ms = start.elapsed().as_secs_f64() * 1000.0;
         if scenario == "library" {
             ensure!(
-                controller.library.len() == library_files,
+                controller.library().len() == library_files,
                 "临时曲库扫描结果不完整。"
+            );
+            ensure!(
+                controller.state().library_revision == 1,
+                "曲库诊断应只完成一次扫描。"
             );
         }
         if scenario == "save" {

@@ -71,37 +71,7 @@ fn manual_save_has_immutable_snapshot_and_new_edits_remain_dirty() {
             .pitch,
         64
     );
-    assert!(c.state.project_dirty());
-}
-#[test]
-fn old_document_save_receipt_cannot_mark_new_document_saved() {
-    let root = tempfile::tempdir().unwrap();
-    let mut c = controller(root.path());
-    c.save_project(&root.path().join("old.hstudio")).unwrap();
-    c.state.set_project(Some(project(67)), true, true);
-    let revision = c.state.saved_revision;
-    drain(&mut c);
-    assert_eq!(c.state.saved_revision, revision);
-    assert_eq!(c.state.autosave_revision, None);
-}
-#[test]
-fn preserving_failure_aborts_switch_and_keeps_current_document() {
-    let root = tempfile::tempdir().unwrap();
-    let mut c = controller(root.path());
-    c.set_notes(project(62).notes).unwrap();
-    drain(&mut c);
-    c.state.saved_revision = 0;
-    let other = root.path().join("other.hstudio");
-    save_project(&other, &project(65)).unwrap();
-    c.set_save_writer(Arc::new(|_, _| anyhow::bail!("simulated disk failure")))
-        .unwrap();
-    c.open_project(&other).unwrap();
-    assert!(c.state.transition.is_some());
-    assert!(c.wait_idle(Duration::from_secs(5)).is_err());
-    assert_eq!(c.state.project.as_ref().unwrap().notes[0].pitch, 62);
-    assert!(c.state.transition.is_none());
-    assert!(!c.state.closed);
-    c.set_save_writer(Arc::new(save_project)).unwrap();
+    assert!(c.state().project_dirty());
 }
 #[test]
 fn failed_manual_save_aborts_requested_close_even_if_later_save_succeeds() {
@@ -118,8 +88,8 @@ fn failed_manual_save_aborts_requested_close_even_if_later_save_succeeds() {
         .unwrap();
     assert!(!c.close().unwrap());
     assert!(c.wait_idle(Duration::from_secs(5)).is_err());
-    assert!(!c.state.closed);
-    assert!(c.state.transition.is_none());
+    assert!(!c.state().closed);
+    assert!(c.state().transition.is_none());
     assert!(c.capabilities().can_edit);
 }
 #[test]
@@ -129,7 +99,7 @@ fn close_waits_for_latest_snapshot_and_stops_transport() {
     c.set_notes(project(66).notes).unwrap();
     assert!(!c.close().unwrap());
     drain(&mut c);
-    assert!(c.state.closed);
+    assert!(c.state().closed);
     assert_eq!(
         load_project(&c.home.join("autosave.hstudio"))
             .unwrap()
@@ -137,7 +107,7 @@ fn close_waits_for_latest_snapshot_and_stops_transport() {
             .pitch,
         66
     );
-    assert_ne!(c.state.transport, Transport::Playing);
+    assert_ne!(c.state().transport, Transport::Playing);
 }
 #[test]
 fn cancelled_export_never_installs_result_or_autoplays() {
@@ -146,18 +116,8 @@ fn cancelled_export_never_installs_result_or_autoplays() {
     c.listen().unwrap();
     c.cancel().unwrap();
     drain(&mut c);
-    assert!(c.state.result.is_none());
-    assert_ne!(c.state.transport, Transport::Playing);
-}
-#[test]
-fn stale_export_cannot_overwrite_current_revision() {
-    let root = tempfile::tempdir().unwrap();
-    let mut c = controller(root.path());
-    c.export().unwrap();
-    c.state.set_project(Some(project(67)), false, false);
-    drain(&mut c);
-    assert_eq!(c.state.project.as_ref().unwrap().notes[0].pitch, 67);
-    assert!(c.state.result.is_none());
+    assert!(c.state().result.is_none());
+    assert_ne!(c.state().transport, Transport::Playing);
 }
 #[test]
 fn edited_notes_invalidate_old_export_and_follow_up_stop_prevents_autoplay() {
@@ -165,16 +125,16 @@ fn edited_notes_invalidate_old_export_and_follow_up_stop_prevents_autoplay() {
     let mut c = controller(root.path());
     c.export().unwrap();
     drain(&mut c);
-    assert!(!c.state.export_dirty());
+    assert!(!c.state().export_dirty());
     c.set_notes(project(64).notes).unwrap();
-    assert!(c.state.export_dirty());
-    assert!(c.state.result.is_none());
+    assert!(c.state().export_dirty());
+    assert!(c.state().result.is_none());
     c.listen().unwrap();
     c.stop().unwrap();
     drain(&mut c);
-    assert!(!c.state.export_dirty());
-    assert_ne!(c.state.transport, Transport::Playing);
-    assert_eq!(c.state.result.as_ref().unwrap().actual[0].pitch, 64);
+    assert!(!c.state().export_dirty());
+    assert_ne!(c.state().transport, Transport::Playing);
+    assert_eq!(c.state().result.as_ref().unwrap().actual[0].pitch, 64);
 }
 #[test]
 fn highlight_removed_after_score_shortening() {
@@ -186,7 +146,7 @@ fn highlight_removed_after_score_shortening() {
         ..project(62).notes[0].clone()
     }])
     .unwrap();
-    assert_eq!(c.state.project.as_ref().unwrap().highlight, None);
+    assert_eq!(c.state().project.as_ref().unwrap().highlight, None);
     drain(&mut c);
 }
 #[test]
@@ -369,7 +329,7 @@ fn phone_command_is_delivered_only_when_controller_polls() {
         thread::sleep(Duration::from_millis(5));
     };
     assert!(response.contains("\"ok\":true"));
-    assert!((c.state.logical_seek - 0.04).abs() < 0.001);
+    assert!((c.state().logical_seek - 0.04).abs() < 0.001);
     c.stop_remote();
 }
 
@@ -398,7 +358,7 @@ fn source_catalog_options_are_retained_when_preparing_midi() {
     };
     c.load_file(&midi, Some(options), true, false).unwrap();
     drain(&mut c);
-    let p = c.state.project.as_ref().unwrap();
+    let p = c.state().project.as_ref().unwrap();
     assert_eq!(p.notes[0].pitch, 62);
     assert!((p.notes[0].end - 0.2).abs() < 0.01);
     assert_eq!(p.options.as_ref().unwrap()["melody_mode"], "highest");
@@ -416,13 +376,13 @@ fn highlight_is_used_after_background_export_without_manual_seek() {
     }])
     .unwrap();
     c.set_highlight(Some(0.5)).unwrap();
-    let mut preferences = c.preferences.clone();
+    let mut preferences = c.preferences().clone();
     preferences.start_from_highlight = true;
     c.update_preferences(preferences).unwrap();
     c.listen().unwrap();
     drain(&mut c);
-    assert_eq!(c.state.transport, Transport::Playing);
-    assert!(c.state.logical_seek >= 0.49);
+    assert_eq!(c.state().transport, Transport::Playing);
+    assert!(c.state().logical_seek >= 0.49);
     c.pause().unwrap();
 }
 #[test]
@@ -432,10 +392,10 @@ fn closing_during_export_does_not_install_or_autoplay_late_result() {
     c.listen().unwrap();
     c.close().unwrap();
     drain(&mut c);
-    assert!(c.state.closed);
+    assert!(c.state().closed);
     assert!(!c.busy());
-    assert!(c.state.result.is_none());
-    assert_ne!(c.state.transport, Transport::Playing);
+    assert!(c.state().result.is_none());
+    assert_ne!(c.state().transport, Transport::Playing);
 }
 
 #[test]
@@ -622,17 +582,17 @@ fn preview_position_label_tracks_transport_changes() {
     let mut c = controller(dir.path());
     c.listen().unwrap();
     drain(&mut c);
-    assert_eq!(c.state.position_label, "试听中");
+    assert_eq!(c.state().position_label, "试听中");
     c.pause().unwrap();
-    assert_eq!(c.state.position_label, "已暂停");
+    assert_eq!(c.state().position_label, "已暂停");
     c.stop().unwrap();
-    assert_eq!(c.state.position_label, "未播放");
+    assert_eq!(c.state().position_label, "未播放");
     c.listen().unwrap();
     let until = Instant::now() + Duration::from_secs(2);
-    while c.state.transport == Transport::Playing && Instant::now() < until {
+    while c.state().transport == Transport::Playing && Instant::now() < until {
         thread::sleep(Duration::from_millis(10));
         c.poll();
     }
-    assert_eq!(c.state.transport, Transport::Ended);
-    assert_eq!(c.state.position_label, "试听结束");
+    assert_eq!(c.state().transport, Transport::Ended);
+    assert_eq!(c.state().position_label, "试听结束");
 }

@@ -5,22 +5,22 @@ impl Studio {
     pub(super) fn import_page(&self, context: &ViewContext<Self>, p: &Palette) -> View {
         let c = self.controller.as_ref().unwrap();
         let enabled = c.capabilities().can_open;
-        let recommended = c.state.keys.first().copied();
+        let recommended = c.state().keys.first().copied();
         let selected = self
             .options
             .track
             .zip(self.options.channel)
-            .or(c.state.selected_part);
+            .or(c.state().selected_part);
         let mut cache = self.part_rows.borrow_mut();
-        if cache.0 != c.state.document_id || cache.1 != c.state.keys.len() {
-            cache.0 = c.state.document_id;
-            cache.1 = c.state.keys.len();
+        if cache.0 != c.state().document_id || cache.1 != c.state().keys.len() {
+            cache.0 = c.state().document_id;
+            cache.1 = c.state().keys.len();
             cache.2 = c
-                .state
+                .state()
                 .keys
                 .iter()
                 .map(|key| {
-                    let notes = &c.state.parts[key];
+                    let notes = &c.state().parts[key];
                     let count = notes.len();
                     let min = notes.iter().map(|n| n.pitch).min().unwrap_or(0);
                     let max = notes.iter().map(|n| n.pitch).max().unwrap_or(0);
@@ -33,7 +33,7 @@ impl Studio {
                         } else {
                             ""
                         },
-                        c.state
+                        c.state()
                             .names
                             .get(&key.0)
                             .map(String::as_str)
@@ -48,7 +48,7 @@ impl Studio {
                         format!("{duration:.1} 秒"),
                         format!(
                             "{:.1}",
-                            c.state.recommendations.get(key).copied().unwrap_or(0.0)
+                            c.state().recommendations.get(key).copied().unwrap_or(0.0)
                         ),
                     ]
                 })
@@ -59,10 +59,10 @@ impl Studio {
             .iter()
             .enumerate()
             .map(|(index, values)| {
-                let active = c.state.keys.get(index).copied() == selected;
+                let active = c.state().keys.get(index).copied() == selected;
                 let background = if active { p.selection } else { p.surface };
                 (
-                    format!("{:?}", c.state.keys[index]),
+                    format!("{:?}", c.state().keys[index]),
                     Border::new()
                         .background(background.native())
                         .corner_radius(4.0)
@@ -144,12 +144,12 @@ impl Studio {
                 .children((
                     label("声部", 14.0, p).font_weight(FontWeight::SEMI_BOLD),
                     label(
-                        if c.state.parts.is_empty() {
+                        if c.state().parts.is_empty() {
                             "支持 MIDI / KAR / RMID。带 ★ 的是推荐声部，已排除打击乐。".into()
                         } else {
                             format!(
                                 "{} 个声部 · 按推荐指数排序（满分 100）· 已排除打击乐",
-                                c.state.parts.len()
+                                c.state().parts.len()
                             )
                         },
                         12.0,

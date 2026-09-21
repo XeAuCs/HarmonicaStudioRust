@@ -10,24 +10,24 @@ impl Studio {
                     if events
                         .iter()
                         .any(|e| matches!(e, crate::controller::ControllerEvent::Parts))
-                        && c.state.project.is_none()
+                        && c.state().project.is_none()
                     {
                         if let Ok(options) = c.default_options() {
                             self.options = options;
-                            if let Some(&(track, channel)) = c.state.keys.first() {
+                            if let Some(&(track, channel)) = c.state().keys.first() {
                                 self.options.track = Some(track);
                                 self.options.channel = Some(channel);
                             }
                         }
                     }
-                    should_redraw = !events.is_empty() || c.state.transport == Transport::Playing;
-                    if !c.state.closed && self.library_watch.poll(&c.library_root()) {
+                    should_redraw = !events.is_empty() || c.state().transport == Transport::Playing;
+                    if !c.state().closed && self.library_watch.poll(&c.library_root()) {
                         if let Err(e) = c.refresh_library() {
                             self.error = e.to_string();
                         }
                     }
                 }
-                if self.controller.as_ref().is_some_and(|c| c.state.closed) {
+                if self.controller.as_ref().is_some_and(|c| c.state().closed) {
                     self.close_allowed.set(true);
                     let _ = context.window().request_close();
                     return;
@@ -60,7 +60,7 @@ impl Studio {
             Message::Save => self.save_picker(context),
             Message::PickedSave(Ok(Some(path))) => {
                 if self.controller.as_ref().is_some_and(|c| {
-                    self.save_version == Some((c.state.document_id, c.state.revision))
+                    self.save_version == Some((c.state().document_id, c.state().revision))
                 }) {
                     self.perform(|c| c.save_project(&path));
                 } else {
@@ -80,7 +80,7 @@ impl Studio {
                 if let Some(entry) = self
                     .controller
                     .as_ref()
-                    .and_then(|c| c.library.iter().find(|e| e.path == path))
+                    .and_then(|c| c.library().iter().find(|e| e.path == path))
                     .cloned()
                 {
                     self.library_menu = false;
@@ -118,14 +118,14 @@ impl Studio {
                     return;
                 }
                 let selected =
-                    index.and_then(|i| self.controller.as_ref()?.state.keys.get(i).copied());
+                    index.and_then(|i| self.controller.as_ref()?.state().keys.get(i).copied());
                 self.options.track = selected.map(|p| p.0);
                 self.options.channel = selected.map(|p| p.1);
             }
             Message::Convert => {
                 let mut options = self.options.clone();
                 if let Some(c) = &self.controller {
-                    options.skip_long_rests = c.preferences.skip_long_rests;
+                    options.skip_long_rests = c.preferences().skip_long_rests;
                 }
                 self.perform(|c| c.convert(options));
             }
@@ -133,11 +133,13 @@ impl Studio {
                 if self
                     .controller
                     .as_ref()
-                    .is_some_and(|c| c.state.transport == Transport::Playing)
+                    .is_some_and(|c| c.state().transport == Transport::Playing)
                 {
                     self.perform(|c| c.toggle_preview());
                 } else if self.controller.as_ref().is_some_and(|c| {
-                    c.preferences.compact && !c.state.parts.is_empty() && c.state.project.is_none()
+                    c.preferences().compact
+                        && !c.state().parts.is_empty()
+                        && c.state().project.is_none()
                 }) {
                     let options = self.options.clone();
                     self.perform(|c| c.convert(options));
@@ -172,20 +174,20 @@ impl Studio {
                 if self
                     .controller
                     .as_ref()
-                    .is_some_and(|c| c.state.transition.is_some())
+                    .is_some_and(|c| c.state().transition.is_some())
                 {
                     return;
                 }
                 self.settings = true;
                 self.library_menu = false;
-                self.settings_draft = self.controller.as_ref().map(|c| c.preferences.clone());
+                self.settings_draft = self.controller.as_ref().map(|c| c.preferences().clone());
             }
             Message::SettingsSave => {
                 if let Some(p) = self.settings_draft.take() {
                     let previous = self
                         .controller
                         .as_ref()
-                        .is_some_and(|c| c.preferences.compact);
+                        .is_some_and(|c| c.preferences().compact);
                     let requested = p.compact;
                     let requested_theme = p.theme.clone();
                     let size = read_client_size(self.native_window.get());
@@ -193,7 +195,7 @@ impl Studio {
                     let applied = self
                         .controller
                         .as_ref()
-                        .is_some_and(|c| c.preferences.compact);
+                        .is_some_and(|c| c.preferences().compact);
                     if requested == applied {
                         self.window_sizes
                             .remember_transition(previous, applied, size);
@@ -204,7 +206,7 @@ impl Studio {
                     if self
                         .controller
                         .as_ref()
-                        .is_some_and(|c| c.preferences.theme == requested_theme)
+                        .is_some_and(|c| c.preferences().theme == requested_theme)
                         && self.committed_theme != requested_theme
                     {
                         let next = Palette::for_theme(&requested_theme);

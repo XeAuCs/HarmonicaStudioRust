@@ -3,7 +3,7 @@ use super::*;
 impl Studio {
     pub(super) fn settings_view(&self, context: &ViewContext<Self>, p: &Palette) -> View {
         let c = self.controller.as_ref().unwrap();
-        let prefs = self.settings_draft.as_ref().unwrap_or(&c.preferences);
+        let prefs = self.settings_draft.as_ref().unwrap_or(c.preferences());
         let theme = ["paper", "forest", "blue", "plum"]
             .iter()
             .position(|t| *t == prefs.theme)

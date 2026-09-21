@@ -87,8 +87,12 @@ impl RemoteServer {
                             // Only the accept loop is nonblocking; per-client workers use
                             // read_exact/write_all and must wait for fragmented packets.
                             if stream.set_nonblocking(false).is_err()
-                                || stream.set_read_timeout(Some(Duration::from_secs(3))).is_err()
-                                || stream.set_write_timeout(Some(Duration::from_secs(3))).is_err()
+                                || stream
+                                    .set_read_timeout(Some(Duration::from_secs(3)))
+                                    .is_err()
+                                || stream
+                                    .set_write_timeout(Some(Duration::from_secs(3)))
+                                    .is_err()
                             {
                                 continue;
                             }
@@ -747,17 +751,18 @@ pub fn handle_command(c: &mut AppController, command: Value) -> Value {
     let result = (|| -> Result<()> {
         let command = validate_command(command)?;
         let action = command["action"].as_str().unwrap();
-        ensure!(!c.state.closed, "电脑已关闭。");
+        ensure!(!c.state().closed, "电脑已关闭。");
         if !["stop", "game_stop", "refresh"].contains(&action) {
             ensure!(
-                !c.busy() && c.state.transition.is_none(),
+                !c.busy() && c.state().transition.is_none(),
                 "曲谱正在准备或保存，请稍候。"
             );
         }
         match action {
             "select" => {
                 let id = command["song_id"].as_str().unwrap();
-                let Some(entry) = c.library.iter().find(|e| song_id(&e.path) == id).cloned() else {
+                let Some(entry) = c.library().iter().find(|e| song_id(&e.path) == id).cloned()
+                else {
                     c.refresh_library()?;
                     bail!("这首歌已不在曲库中，请刷新。")
                 };
@@ -781,7 +786,7 @@ pub fn handle_command(c: &mut AppController, command: Value) -> Value {
         Ok(())
     })();
     match result {
-        Ok(()) => json!({"ok":true,"message":c.state.message}),
+        Ok(()) => json!({"ok":true,"message":c.state().message}),
         Err(e) => {
             c.report_error(e);
             json!({"ok":false,"message":"操作未完成，请检查电脑端状态。"})
@@ -907,10 +912,7 @@ mod pairing_status_tests {
         // Regression guard: user- and phone-visible wording. Encoding damage
         // anywhere in these literals changes the rendered text.
         let cases = [
-            (
-                serde_json::json!({"action": "bogus"}),
-                "不支持这个操作。",
-            ),
+            (serde_json::json!({"action": "bogus"}), "不支持这个操作。"),
             (serde_json::json!({}), "操作缺少名称"),
             (
                 serde_json::json!({"action": "select", "song_id": ""}),
@@ -922,10 +924,7 @@ mod pairing_status_tests {
             ),
         ];
         for (command, message) in cases {
-            assert_eq!(
-                validate_command(command).unwrap_err().to_string(),
-                message
-            );
+            assert_eq!(validate_command(command).unwrap_err().to_string(), message);
         }
         assert!(validate_command(serde_json::json!({"action": "stop"})).is_ok());
     }

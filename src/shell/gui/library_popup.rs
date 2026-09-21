@@ -9,8 +9,8 @@ impl Studio {
             .map_or(300.0, |(_, height)| (height - 370.0).clamp(100.0, 300.0));
         let mut rows = Vec::new();
         for index in filtered {
-            let item = &c.library[index];
-            let current = c.state.source.as_ref() == Some(&item.path);
+            let item = &c.library()[index];
+            let current = c.state().source.as_ref() == Some(&item.path);
             let duration = item
                 .duration_seconds
                 .filter(|d| d.is_finite() && *d >= 0.0)
@@ -159,9 +159,9 @@ impl Studio {
                         if c.library_refreshing() {
                             "正在刷新…".into()
                         } else if self.library_query.trim().is_empty() {
-                            format!("{} 首曲目 · 点击打开", c.library.len())
+                            format!("{} 首曲目 · 点击打开", c.library().len())
                         } else {
-                            format!("找到 {count} / {} 首曲目", c.library.len())
+                            format!("找到 {count} / {} 首曲目", c.library().len())
                         },
                         11.0,
                         p,

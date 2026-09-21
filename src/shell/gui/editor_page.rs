@@ -3,16 +3,16 @@ use super::*;
 impl Studio {
     pub(super) fn editor_page(&self, context: &ViewContext<Self>, p: &Palette) -> View {
         let c = self.controller.as_ref().unwrap();
-        let compact = c.preferences.compact;
-        let has = c.state.has_notes();
+        let compact = c.preferences().compact;
+        let has = c.state().has_notes();
         let caps = c.capabilities();
-        let ready = !c.busy() && c.state.transition.is_none();
-        let retry = compact && !c.state.parts.is_empty() && c.state.project.is_none();
-        let summary = if let Some(project) = &c.state.project {
+        let ready = !c.busy() && c.state().transition.is_none();
+        let retry = compact && !c.state().parts.is_empty() && c.state().project.is_none();
+        let summary = if let Some(project) = &c.state().project {
             let mut s = format!(
                 "{} 音  /  {:.1} 秒",
                 project.notes.len(),
-                c.state.score_duration
+                c.state().score_duration
             );
             if let Some(report) = project.report.as_ref() {
                 let adjusted = report
@@ -27,7 +27,7 @@ impl Studio {
                     .get("removed_rest_seconds")
                     .and_then(|v| v.as_f64())
                     .unwrap_or(0.0);
-                if removed > 0.0 && !c.state.export_dirty() {
+                if removed > 0.0 && !c.state().export_dirty() {
                     s += &format!("  /  已缩短 {removed:.1} 秒空白");
                 }
                 if adjusted > 0 {
@@ -37,7 +37,7 @@ impl Studio {
                     s += &format!("  /  超音域丢弃 {dropped} 音");
                 }
             }
-            if c.state.export_dirty() {
+            if c.state().export_dirty() {
                 s += "  /  待生成";
             }
             s
@@ -113,7 +113,7 @@ impl Studio {
                             context,
                             "标记心动片段",
                             Message::Mark,
-                            caps.can_edit && has && c.state.logical_seek < c.state.score_duration,
+                            caps.can_edit && has && c.state().logical_seek < c.state().score_duration,
                             false,
                             p,
                         ),
@@ -122,7 +122,7 @@ impl Studio {
                             "跳到标记",
                             Message::JumpMark,
                             ready
-                                && c.state
+                                && c.state()
                                     .project
                                     .as_ref()
                                     .is_some_and(|p| p.highlight.is_some()),
@@ -134,7 +134,7 @@ impl Studio {
                             "清除标记",
                             Message::ClearMark,
                             caps.can_edit
-                                && c.state
+                                && c.state()
                                     .project
                                     .as_ref()
                                     .is_some_and(|p| p.highlight.is_some()),
@@ -151,10 +151,10 @@ impl Studio {
             ])
             .children((
                 label(
-                    if c.state.position_label.is_empty() {
+                    if c.state().position_label.is_empty() {
                         "未播放"
                     } else {
-                        &c.state.position_label
+                        &c.state().position_label
                     },
                     12.0,
                     p,
@@ -190,15 +190,15 @@ impl Studio {
                     context,
                     if retry {
                         "重新生成"
-                    } else if c.state.transport == Transport::Playing {
+                    } else if c.state().transport == Transport::Playing {
                         "暂停"
-                    } else if c.state.transport == Transport::Paused {
+                    } else if c.state().transport == Transport::Paused {
                         "继续试听"
                     } else {
                         "试听"
                     },
                     Message::Listen,
-                    c.state.transport == Transport::Playing
+                    c.state().transport == Transport::Playing
                         || caps.can_play
                         || (retry && caps.can_open),
                     true,

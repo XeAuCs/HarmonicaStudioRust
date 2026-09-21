@@ -36,6 +36,9 @@ mod lifecycle_tests;
 mod playback;
 #[path = "controller/remote.rs"]
 mod remote;
+#[cfg(test)]
+#[path = "controller/state_guard_tests.rs"]
+mod state_guard_tests;
 enum WorkResult {
     Load(LoadedParts, PathBuf, Option<Project>, bool),
     Open(Project, PathBuf),
@@ -55,9 +58,9 @@ struct PendingAction {
 }
 pub struct AppController {
     pub home: PathBuf,
-    pub state: AppState,
-    pub preferences: Preferences,
-    pub library: Vec<LibraryEntry>,
+    state: AppState,
+    preferences: Preferences,
+    library: Vec<LibraryEntry>,
     jobs: JobRunner<WorkResult>,
     library_jobs: JobRunner<(PathBuf, Vec<LibraryEntry>)>,
     saves: SaveQueue,
@@ -79,6 +82,31 @@ pub struct AppController {
     closing_resources: bool,
 }
 impl AppController {
+    /// Read-only business state; mutations must go through controller operations.
+    /// ```compile_fail
+    /// fn bypass(c: &mut harmonica_studio::controller::AppController) {
+    ///     c.state().saved_revision = 0;
+    /// }
+    /// ```
+    pub fn state(&self) -> &AppState {
+        &self.state
+    }
+    /// ```compile_fail
+    /// fn bypass(c: &mut harmonica_studio::controller::AppController) {
+    ///     c.preferences().compact = true;
+    /// }
+    /// ```
+    pub fn preferences(&self) -> &Preferences {
+        &self.preferences
+    }
+    /// ```compile_fail
+    /// fn bypass(c: &mut harmonica_studio::controller::AppController) {
+    ///     c.library()[0].title.clear();
+    /// }
+    /// ```
+    pub fn library(&self) -> &[LibraryEntry] {
+        &self.library
+    }
     pub fn new(home: Option<PathBuf>) -> Result<Self> {
         let home = home.unwrap_or_else(paths::data_root);
         let control = home.join("control");
