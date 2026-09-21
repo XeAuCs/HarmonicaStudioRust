@@ -71,6 +71,20 @@ GitHub 仓库提供源码，不包含本机的 MIDI 曲库、个人工程、`dat
 
 CoreOnly 使用 target/core-only 独立目录，且桌面 EXE 在 Cargo 中要求 desktop 功能，不会用无界面的构建覆盖正常程序。
 
+默认测试使用代码生成的 MIDI 夹具，不依赖 `samples/` 中的个人曲谱或 `catalog.json`。完整测试输出中的 4 项忽略测试属于可选历史曲库审计，不计为通过；`-CoreOnly` 不包含该审计目标。
+
+如已自行准备完整历史曲库，可显式运行审计（普通用户和打包不需要）：
+
+```powershell
+. .\scripts\common.ps1
+$taskCargo = Get-Cargo
+$env:HARMONICA_TEST_CORPUS = 'D:\自己的历史曲库'
+& $taskCargo test --locked --test local_corpus -- --ignored --nocapture
+Remove-Item Env:HARMONICA_TEST_CORPUS
+```
+
+审计保留固定文件、SHA-256 和历史算法统计校验，任意曲库不能替代该历史数据集；未指定路径、缺少资源或固定哈希不符时会失败，不会因资源缺失直接跳过。
+
 测试窗口只显示中文进度和通过数量。每次运行的完整测试输出及编译诊断分别保存到 `verification/test-日期时间-编号/`，失败时会提示原因和日志位置。
 
 ## 打包
