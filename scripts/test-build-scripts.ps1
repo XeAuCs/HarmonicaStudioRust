@@ -44,6 +44,19 @@ function Remove-FixtureLink([string]$Path){
     [IO.Directory]::Delete($resolved)
 }
 try {
+    Run-Check '版本选择默认不更新且非法输入可重试' {
+        $current='2.0.0-alpha.1'
+        foreach($inputValue in @('', '   ', $current)) {
+            $value=Read-BuildVersion $current { $inputValue }
+            Assert-True ([string]::IsNullOrEmpty($value)) '默认或相同版本不应触发更新。'
+        }
+        $answers=[Collections.Generic.Queue[string]]::new()
+        $answers.Enqueue('bad-version')
+        $answers.Enqueue('1.0.0-01')
+        $answers.Enqueue(' 2.0.0-alpha.2 ')
+        $value=Read-BuildVersion $current { $answers.Dequeue() }
+        Assert-True ($value -eq '2.0.0-alpha.2' -and $answers.Count -eq 0) '非法输入未重试或合法版本未保留。'
+    }
     Run-Check '命令日志保留双输出、中文参数和失败退出码' {
         $root=Join-Path $fixtureRoot '日志 中文 空格'
         New-Item -ItemType Directory -Path $root | Out-Null
@@ -69,6 +82,63 @@ try {
         $error=Assert-Fails {Invoke-LoggedCommand -Executable $exe -Arguments @('fail') -LogPath (Join-Path $root 'failure.log') -Label '日志夹具'}
         Assert-True ($error.Message.Contains('退出码 23')) '失败退出码被吞掉。'
         Assert-True ($error.Message.Contains('ERR3999') -and $error.Message.Contains('failure.log')) '失败未显示错误摘要和日志路径。'
+    }
+    Run-Check '便携启动器透传复杂参数、工作目录、双输出和退出码' {
+        $root=Join-Path $fixtureRoot '启动器 中文 空格 &!'
+        $program=Join-Path $root 'program'
+        New-Item -ItemType Directory -Path $program -Force | Out-Null
+        $cargo=Get-Cargo
+        $rustc=Join-Path (Split-Path -Parent $cargo) 'rustc.exe'
+        $launcher=Join-Path $root 'HarmonicaStudio.exe'
+        Invoke-LoggedCommand $rustc @('--edition=2024','--crate-name','launcher_fixture',(Join-Path $ProjectRoot 'src\launcher.rs'),'-o',$launcher) (Join-Path $root 'compile.log') '启动器夹具'
+        $source=Join-Path $root 'child.rs'
+        Write-FixtureFile $source 'fn main() { for (i,a) in std::env::args().skip(1).enumerate() { println!("ARG{}={}",i,a); } println!("CWD={}",std::env::current_dir().unwrap().display()); eprintln!("child-stderr"); std::process::exit(23); }'
+        Invoke-LoggedCommand $rustc @('--crate-name','child_fixture',$source,'-o',(Join-Path $program 'HarmonicaStudio.exe')) (Join-Path $root 'child-compile.log') '子程序夹具'
+        $log=Join-Path $root 'launch.log'
+        $arguments=@('中文 空格','quote"inside','C:\ending\','', 'a&b!')
+        $failure=Assert-Fails {Invoke-LoggedCommand $launcher $arguments $log '启动器'}
+        Assert-True ($failure.Message.Contains('退出码 23')) '子程序退出码丢失。'
+        $output=[IO.File]::ReadAllText($log)
+        for($i=0;$i -lt $arguments.Count;$i++){Assert-True ($output.Contains("ARG${i}=$($arguments[$i])")) '启动器改变了参数。'}
+        Assert-True ($output.Contains('CWD='+(Get-Location).Path)) '启动器改变了调用者工作目录。'
+        Assert-True ([IO.File]::ReadAllText([IO.Path]::ChangeExtension($log,'stderr.log')).Contains('child-stderr')) '子程序错误输出丢失。'
+        Remove-Item -LiteralPath (Join-Path $program 'HarmonicaStudio.exe')
+        $failure=Assert-Fails {Invoke-LoggedCommand $launcher @('build-info') (Join-Path $root 'missing.log') '缺失程序'}
+        Assert-True ($failure.Message.Contains('退出码 1')) '内部程序缺失没有明确失败。'
+    }
+    Run-Check '旧布局迁移保留修改、未知文件和个人数据' {
+        $f=New-Fixture 'legacy-preserve'
+        Write-FixtureFile (Join-Path $f.Source 'program\portable-layout.txt') 'harmonica-studio-portable-v2'
+        foreach($relative in @('assets\player.ahk','en-us\resources.pri')) {
+            Write-FixtureFile (Join-Path $f.Source ('program\'+$relative)) 'official'
+            Write-FixtureFile (Join-Path $f.Destination $relative) 'official'
+        }
+        Write-FixtureFile (Join-Path $f.Destination 'assets\player.ahk') 'personal edit'
+        Write-FixtureFile (Join-Path $f.Destination 'assets\my-file.txt') 'keep'
+        Write-FixtureFile (Join-Path $f.Destination 'data\settings.json') 'personal'
+        foreach($retired in @('assets\phone.svg','HarmonicaStudio.pdb','third_party\licenses\harmonica-studio-2.1.1\LICENSE')){Write-FixtureFile (Join-Path $f.Destination $retired) 'retired artifact'}
+        $result=Install-PortableTree $f.Source $f.Destination $f.Rollback -MigrateLegacy
+        Assert-True ($result.Migrated -eq 5) '已知旧文件或明确废弃文件没有迁移。'
+        Assert-True (-not (Test-Path -LiteralPath (Join-Path $f.Destination 'en-us'))) '空语言目录没有清理。'
+        Assert-True ([IO.File]::ReadAllText((Join-Path $f.Destination 'assets\my-file.txt')) -eq 'keep') '未知个人文件被删除。'
+        Assert-True ([IO.File]::ReadAllText((Join-Path $f.Destination 'data\settings.json')) -eq 'personal') '个人数据被改变。'
+        $archives=@(Get-TreeFilesNoLinks (Join-Path $f.Destination 'program\previous-layout'))
+        Assert-True ($archives.Count -eq 4 -and @($archives | Where-Object {[IO.File]::ReadAllText($_.FullName) -eq 'personal edit'}).Count -eq 1) '有差异的旧文件没有保留原文。'
+        $again=Install-PortableTree $f.Source $f.Destination (Join-Path $f.Root 'rollback-again') -MigrateLegacy
+        Assert-True ($again.Migrated -eq 0) '重复安装重复迁移。'
+    }
+    Run-Check '迁移清理中途失败恢复旧布局与旧程序' {
+        $f=New-Fixture 'legacy-rollback'
+        Write-FixtureFile (Join-Path $f.Source 'program\portable-layout.txt') 'harmonica-studio-portable-v2'
+        foreach($name in @('one.txt','two.txt')) {
+            Write-FixtureFile (Join-Path $f.Source ('program\assets\'+$name)) 'new'
+            Write-FixtureFile (Join-Path $f.Destination ('assets\'+$name)) 'old'
+        }
+        $failure=Assert-Fails {Install-PortableTree $f.Source $f.Destination $f.Rollback -MigrateLegacy -BeforeLegacyRemove {param($index,$item);if($index -eq 1){throw 'injected migration failure'}}}
+        Assert-True ($failure.Message.Contains('injected migration failure') -and -not $failure.Data['KeepRollback']) '迁移故障未完整回滚。'
+        foreach($name in @('one.txt','two.txt')){Assert-True ([IO.File]::ReadAllText((Join-Path $f.Destination ('assets\'+$name))) -eq 'old') '旧布局文件未恢复。'}
+        Assert-True ([IO.File]::ReadAllText((Join-Path $f.Destination 'a.dll')) -eq 'old-a.dll') '原程序未恢复。'
+        Assert-True (-not (Test-Path -LiteralPath (Join-Path $f.Destination 'program\portable-layout.txt'))) '新布局标记未撤销。'
     }
     Run-Check 'PowerShell 脚本语法' {
         foreach($file in Get-ChildItem -LiteralPath $PSScriptRoot -Filter '*.ps1'){$tokens=$null;$errors=$null;[Management.Automation.Language.Parser]::ParseFile($file.FullName,[ref]$tokens,[ref]$errors)|Out-Null;Assert-True ($errors.Count -eq 0) ('脚本解析失败：'+$file.Name)}
@@ -127,12 +197,13 @@ fn main() {
         $batch=Join-Path $root '打包.cmd'
         Copy-Item -LiteralPath (Join-Path $ProjectRoot '打包.cmd') -Destination $batch
         foreach($expectedExit in @(23,0)){
-            $stub='$ErrorActionPreference = ''Stop''; [IO.File]::WriteAllText((Join-Path $PSScriptRoot ''called.txt''),(Get-Location).Path); exit '+$expectedExit
+            $stub='param([switch]$Console,[switch]$PromptVersion); $ErrorActionPreference = ''Stop''; [IO.File]::WriteAllText((Join-Path $PSScriptRoot ''called.txt''),(Get-Location).Path); [IO.File]::WriteAllText((Join-Path $PSScriptRoot ''prompt.txt''),$PromptVersion.IsPresent.ToString()); exit '+$expectedExit
             Write-FixtureFile (Join-Path $scripts 'build.ps1') $stub
             $result=Invoke-FixtureBatch $batch $fixtureRoot
             Assert-True ($result.ExitCode -eq $expectedExit) ('打包退出码丢失，预期 '+$expectedExit+'，实际 '+$result.ExitCode)
             Assert-True ([string]::IsNullOrWhiteSpace($result.Error)) ('打包 CMD 解析失败：'+$result.Error)
             Assert-True ($result.Output.Contains('按任意键关闭窗口...')) '打包结束提示中文损坏或丢失。'
+            Assert-True ([IO.File]::ReadAllText((Join-Path $scripts 'prompt.txt')) -eq 'True') '双击打包入口没有启用版本选择。'
             Assert-True ([IO.File]::ReadAllText((Join-Path $scripts 'called.txt')).Equals($root,[StringComparison]::OrdinalIgnoreCase)) '打包脚本未在项目目录执行。'
         }
     }
@@ -198,6 +269,7 @@ fn main() {
         $root=Join-Path $fixtureRoot 'version';New-Item -ItemType Directory -Path $root|Out-Null;$manifest=Join-Path $root 'Cargo.toml'
         $text="[package]`r`nname = `"example`"`r`nversion = `"1.0.0`"`r`n`r`n[dependencies.helper]`r`nversion = `"9.8.7`"`r`n"
         [IO.File]::WriteAllText($manifest,$text)
+        Assert-True ((Get-CargoPackageVersion $manifest) -eq '1.0.0') '读到了依赖版本而不是项目版本。'
         Set-CargoPackageVersion $manifest '2.0.0-alpha.1+build.2'
         $updated=[IO.File]::ReadAllText($manifest)
         Assert-True ($updated.Contains('version = "2.0.0-alpha.1+build.2"')) '项目版本未更新。'

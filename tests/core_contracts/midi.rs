@@ -1,6 +1,34 @@
 use super::support::*;
 
 #[test]
+fn midi_names_preserve_utf8_and_reject_invalid_text_without_corrupting_notes() {
+    for (bytes, expected) in [
+        ("主旋律".as_bytes(), "主旋律"),
+        (b"Piano".as_slice(), "Piano"),
+        (b"\xff".as_slice(), "未识别名称"),
+    ] {
+        let mut track = vec![0, 255, 3, bytes.len() as u8];
+        track.extend(bytes);
+        track.extend([0, 144, 60, 80, 120, 128, 60, 0]);
+        track.extend(eot());
+        let (parts, names) = parse_midi(&smf(vec![track], 0)).unwrap();
+        assert_eq!(names[&0], expected);
+        assert_eq!(parts[&(0, 0)][0].pitch, 60);
+        assert_eq!(parts[&(0, 0)].len(), 1);
+    }
+}
+
+#[cfg(windows)]
+#[test]
+fn midi_names_decode_legacy_chinese_gbk() {
+    let mut track = vec![0, 255, 3, 6, 0xd6, 0xf7, 0xd0, 0xfd, 0xc2, 0xc9];
+    track.extend([0, 144, 60, 80, 120, 128, 60, 0]);
+    track.extend(eot());
+    let (_, names) = parse_midi(&smf(vec![track], 0)).unwrap();
+    assert_eq!(names[&0], "主旋律");
+}
+
+#[test]
 fn midi_tempo_from_other_track() {
     let mut tempos = vec![0, 255, 81, 3, 7, 161, 32];
     tempos.extend(vlq_out(480));

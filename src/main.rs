@@ -134,7 +134,11 @@ fn run(cli: Cli) -> Result<()> {
         }
         Some(Command::SelfTest) => diagnostics::self_test()?,
         Some(Command::BuildInfo) => {
-            serde_json::json!({"version":env!("CARGO_PKG_VERSION"),"desktop_enabled":cfg!(all(windows,feature="desktop")),"executable":std::env::current_exe()?})
+            serde_json::json!({"version":env!("CARGO_PKG_VERSION"),"desktop_enabled":cfg!(all(windows,feature="desktop")),"executable":std::env::current_exe()?,
+                "application_root": harmonica_studio::paths::application_root(),
+                "resource_root": harmonica_studio::paths::resource_root(),
+                "data_root": harmonica_studio::paths::data_root(),
+                "default_library_root": harmonica_studio::paths::default_library_root()})
         }
         Some(Command::Diagnose {
             notes,

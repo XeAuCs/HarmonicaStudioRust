@@ -2,6 +2,7 @@
 
 启动：双击 HarmonicaStudio.exe。
 移动：请复制整个 HarmonicaStudio 文件夹。
+program 保存程序、运行组件及资源，请勿单独移动或删除。
 
 默认 samples 是曲库，data 保存设置、工程、恢复记录和导出。
 设置中可以选择外部曲库。HARMONICA_STUDIO_HOME 可指定个人数据目录。
@@ -20,4 +21,5 @@
 
 本版本处于 Rust 迁移验收阶段。源码和自动检查记录见项目目录。
 启动错误记录写入 data/logs/startup-error.log；重构成品检查记录保存在项目 verification 目录。
-第三方许可见 THIRD_PARTY.md 和 third_party/licenses。
+第三方许可见 program/THIRD_PARTY.md 和 program/third_party/licenses。
+升级旧目录时，内容有差异的旧程序文件会保留在 program/previous-layout，个人曲库与数据保留原位。

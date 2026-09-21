@@ -83,6 +83,15 @@ impl RemoteServer {
                 while !run.load(Ordering::Relaxed) {
                     match listener.accept() {
                         Ok((mut stream, _)) => {
+                            // Winsock accepts inherit the listener's nonblocking mode.
+                            // Only the accept loop is nonblocking; per-client workers use
+                            // read_exact/write_all and must wait for fragmented packets.
+                            if stream.set_nonblocking(false).is_err()
+                                || stream.set_read_timeout(Some(Duration::from_secs(3))).is_err()
+                                || stream.set_write_timeout(Some(Duration::from_secs(3))).is_err()
+                            {
+                                continue;
+                            }
                             if active.fetch_add(1, Ordering::Relaxed) >= 12 {
                                 active.fetch_sub(1, Ordering::Relaxed);
                                 let _ = respond(&mut stream, 503, b"{}", "application/json", false);
@@ -98,8 +107,6 @@ impl RemoteServer {
                             let _ = thread::Builder::new().name("harmonica-http".into()).spawn(
                                 move || {
                                     let _guard = guard;
-                                    let _ = stream.set_read_timeout(Some(Duration::from_secs(3)));
-                                    let _ = stream.set_write_timeout(Some(Duration::from_secs(3)));
                                     if handle_request(
                                         &mut stream,
                                         &hosts,
@@ -500,6 +507,17 @@ fn error(stream: &mut TcpStream, status: u16, message: &str) -> Result<()> {
     )?;
     Ok(())
 }
+fn remote_page() -> &'static str {
+    static PAGE: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    PAGE.get_or_init(|| {
+        // Deliver layout in the initial response so a failed stylesheet request
+        // cannot leave the mobile controls unstyled or SVGs at intrinsic size.
+        include_str!("../../assets/remote.html").replace(
+            "<link rel=\"stylesheet\" href=\"/remote.css\">",
+            &format!("<style>{}</style>", include_str!("../../assets/remote.css")),
+        )
+    })
+}
 fn handle_request(
     stream: &mut TcpStream,
     hosts: &BTreeSet<String>,
@@ -523,7 +541,10 @@ fn handle_request(
         request.len() == 3 && request[2].starts_with("HTTP/1."),
         "请求格式错误"
     );
-    let (method, path) = (request[0], request[1]);
+    let method = request[0];
+    // Match the original server's URL parsing: query parameters are not part
+    // of the resource path, and never substitute for the Authorization header.
+    let (path, query) = request[1].split_once('?').unwrap_or((request[1], ""));
     let mut headers: BTreeMap<String, Vec<String>> = BTreeMap::new();
     for line in lines.filter(|s| !s.is_empty()) {
         let (k, v) = line.split_once(':').context("请求头格式错误。")?;
@@ -563,6 +584,9 @@ fn handle_request(
             .last_client_at = Some(Instant::now());
     }
     if method == "GET" || method == "HEAD" {
+        if path == "/api/score" && !query.is_empty() {
+            return error(stream, 400, "曲谱请求不接受路径或其他参数。");
+        }
         let body = match path {
             "/api/state" => Some((
                 shared
@@ -581,7 +605,7 @@ fn handle_request(
                 "application/json; charset=utf-8",
             )),
             "/" | "/remote.html" => Some((
-                include_bytes!("../../assets/remote.html").to_vec(),
+                remote_page().as_bytes().to_vec(),
                 "text/html; charset=utf-8",
             )),
             "/remote.css" => Some((
@@ -766,6 +790,10 @@ pub fn handle_command(c: &mut AppController, command: Value) -> Value {
 }
 
 #[cfg(test)]
+#[path = "remote/http_tests.rs"]
+mod http_tests;
+
+#[cfg(test)]
 mod pairing_status_tests {
     use super::*;
     fn request(
@@ -790,6 +818,24 @@ mod pairing_status_tests {
         let mut response = String::new();
         stream.read_to_string(&mut response).unwrap();
         response
+    }
+    #[test]
+    fn mobile_page_delivers_complete_styles_without_another_request() {
+        let mut server = RemoteServer::start("127.0.0.1", 0).unwrap();
+        for path in ["/", "/remote.html"] {
+            let response = request(&server, "127.0.0.1", None, path);
+            assert!(response.starts_with("HTTP/1.0 200"));
+            let (headers, body) = response.split_once("\r\n\r\n").unwrap();
+            assert!(headers.contains("Content-Type: text/html; charset=utf-8"));
+            assert!(headers.contains(&format!("Content-Length: {}", body.len())));
+            assert!(body.contains(include_str!("../../assets/remote.css")));
+            assert!(body.contains("<style>") && body.contains("</style>"));
+            assert!(!body.contains("rel=\"stylesheet\""));
+        }
+        let css = request(&server, "127.0.0.1", None, "/remote.css");
+        assert!(css.starts_with("HTTP/1.0 200"));
+        assert!(css.contains("Content-Type: text/css; charset=utf-8"));
+        server.stop();
     }
     #[test]
     fn only_authenticated_local_api_requests_mark_recent_connection() {

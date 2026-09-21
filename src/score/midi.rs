@@ -10,6 +10,8 @@ pub type PartKey = (usize, u8);
 pub type Parts = BTreeMap<PartKey, Vec<Note>>;
 pub type TrackNames = BTreeMap<usize, String>;
 const MAX_BYTES: usize = 20 * 1024 * 1024;
+#[path = "midi_text.rs"]
+mod text;
 struct Reader<'a> {
     bytes: &'a [u8],
     position: usize,
@@ -143,7 +145,7 @@ pub fn parse_midi(bytes: &[u8]) -> Result<(Parts, TrackNames)> {
                             tempos.insert(tick, tempo);
                         }
                         3 => {
-                            names.insert(track, String::from_utf8_lossy(value).into_owned());
+                            names.insert(track, text::decode_name(value));
                         }
                         47 => break,
                         _ => {}

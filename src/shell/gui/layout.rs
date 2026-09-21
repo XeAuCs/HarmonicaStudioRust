@@ -1,3 +1,4 @@
+use super::native::window_icon_path;
 use super::*;
 
 impl Studio {
@@ -20,6 +21,7 @@ impl Studio {
         let (window_width, window_height) = self.window_sizes.for_mode(compact);
         context.window_visuals(
             WindowVisuals::new()
+                .icon(window_icon_path())
                 .theme(WindowTheme::Light)
                 .client_size(window_width, window_height)
                 .constraints(WindowConstraints {
@@ -263,7 +265,7 @@ impl Studio {
         };
         let phone = ContentDialog::new()
             .is_open(self.phone && !self.settings)
-            .resource_overrides(dialog_resources(&p, 468.0))
+            .resource_overrides(dialog_resources(&p, 420.0))
             .on_closed(context.callback(|_| Message::PhoneClosed))
             .content(phone_content);
         // Dialog overlays must belong to a native children container. A root

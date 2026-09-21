@@ -8,10 +8,15 @@ pub(super) fn label(value: impl Into<String>, size: f64, p: &Palette) -> TextBlo
         .foreground(p.ink.native())
 }
 pub(super) fn logo(size: f64) -> View {
+    // WinUI file-URI loading can silently fail after portable relocation.
+    // Keep the small branding bitmap with the executable, independent of its path.
     Image::new()
-        .source_file(crate::paths::resource_root().join("assets/studio.png"))
-        .map(|i| i.width(size).height(size).into())
-        .unwrap_or_else(|_| View::empty())
+        .source_data(EncodedImage::from_static(include_bytes!(
+            "../../../assets/studio.png"
+        )))
+        .width(size)
+        .height(size)
+        .into()
 }
 pub(super) fn card(p: &Palette) -> Border {
     Border::new()
@@ -59,13 +64,14 @@ pub(super) fn check(
         .on_is_checked_changed(context.callback(message))
         .content(label(title, 13.0, p).text_wrapping(TextWrapping::Wrap))
 }
-pub(super) fn table_row(values: [String; 4], p: &Palette, heading: bool) -> View {
+pub(super) fn table_row(values: [String; 5], p: &Palette, heading: bool) -> View {
     Grid::new()
         .columns([
             GridLength::STAR,
-            GridLength::Pixel(52.0),
-            GridLength::Pixel(72.0),
-            GridLength::Pixel(72.0),
+            GridLength::Pixel(64.0),
+            GridLength::Pixel(112.0),
+            GridLength::Pixel(88.0),
+            GridLength::Pixel(80.0),
         ])
         .keyed_children(values.into_iter().enumerate().map(|(i, v)| {
             (
@@ -76,7 +82,11 @@ pub(super) fn table_row(values: [String; 4], p: &Palette, heading: bool) -> View
                     } else {
                         FontWeight::NORMAL
                     })
-                    .text_trimming(TextTrimming::CharacterEllipsis)
+                    .text_trimming(if i == 0 {
+                        TextTrimming::CharacterEllipsis
+                    } else {
+                        TextTrimming::None
+                    })
                     .grid_column(i as i32)
                     .margin(Thickness::xy(8.0, 7.0)),
             )
@@ -161,46 +171,4 @@ pub(super) fn icon_button(
         .content(icon)
         .tooltip(title)
         .into()
-}
-pub(super) fn ornament(canvas_theme: &Rc<RefCell<Palette>>, invalidator: &Invalidator) -> View {
-    let palette = Rc::clone(canvas_theme);
-    Border::new()
-        .height(24.0)
-        .content(windows_canvas::Canvas::invalidated(
-            invalidator,
-            move |ctx| {
-                let p = palette.borrow();
-                ctx.clear(p.surface.canvas());
-                let line = ctx.create_solid_brush(p.line.canvas())?;
-                let accent = ctx.create_solid_brush(p.accent.canvas())?;
-                let middle = ctx.width / 2.0;
-                for y in [6.0, 12.0, 18.0] {
-                    ctx.draw_line(
-                        Vector2::new(16.0, y),
-                        Vector2::new(middle - 46.0, y),
-                        &line,
-                        0.8,
-                    );
-                    ctx.draw_line(
-                        Vector2::new(middle + 46.0, y),
-                        Vector2::new(ctx.width - 16.0, y),
-                        &line,
-                        0.8,
-                    );
-                }
-                for (offset, y) in [(-22.0, 16.0), (0.0, 10.0), (22.0, 13.0)] {
-                    ctx.fill_ellipse(
-                        &Ellipse::new(Vector2::new(middle + offset, y), 3.0, 2.0),
-                        &accent,
-                    );
-                    ctx.draw_line(
-                        Vector2::new(middle + offset + 3.0, y),
-                        Vector2::new(middle + offset + 3.0, y - 9.0),
-                        &accent,
-                        1.2,
-                    );
-                }
-                Ok(())
-            },
-        ))
 }

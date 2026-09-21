@@ -1,5 +1,12 @@
 use super::*;
 
+pub(super) fn window_icon_path() -> &'static str {
+    // Reactor retains a static path; resolve it once from the portable resource root.
+    static PATH: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    PATH.get_or_init(|| crate::paths::icon_path().to_string_lossy().into_owned())
+        .as_str()
+}
+
 /// Keep independent client sizes for the two modes, just as the source window
 /// records its current size before changing the compact flag.
 #[derive(Debug)]

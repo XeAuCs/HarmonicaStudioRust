@@ -1,4 +1,4 @@
-//! Single theme source: palette values, QR tones, and change records.
+//! Single theme source: palette values and change records.
 //!
 //! `gui.rs` renders from this module and `controller.rs` publishes the same
 //! hex table to the phone. No WinUI calls here so core tests stay headless.
@@ -38,39 +38,6 @@ pub struct Palette {
 impl Palette {
     pub fn all_themes() -> [&'static str; 4] {
         ["paper", "forest", "blue", "plum"]
-    }
-
-    /// Artistic QR gradient tones, mirroring the original `QR_TONES` table.
-    /// Every tone comes from the active Palette family; unknown accents fall
-    /// back to the palette's own accent/ink instead of a fixed blue/purple.
-    pub fn qr_tones(&self) -> [Rgb; 4] {
-        match self.accent.channels() {
-            (0x9F, 0x49, 0x37) => [
-                self.accent,
-                Rgb::hex(0x794963),
-                Rgb::hex(0x526741),
-                Rgb::hex(0x826025),
-            ],
-            (0x38, 0x6C, 0x5F) => [
-                Rgb::hex(0x326855),
-                Rgb::hex(0x276D79),
-                Rgb::hex(0x465F91),
-                Rgb::hex(0x71577C),
-            ],
-            (0x4A, 0x60, 0x84) => [
-                Rgb::hex(0x385989),
-                Rgb::hex(0x5E5193),
-                Rgb::hex(0x2F7273),
-                Rgb::hex(0x845066),
-            ],
-            (0x80, 0x53, 0x69) => [
-                self.accent,
-                Rgb::hex(0x565A93),
-                Rgb::hex(0x326D72),
-                Rgb::hex(0x9B4F64),
-            ],
-            _ => [self.accent, self.accent, self.ink, self.ink],
-        }
     }
 
     pub fn for_theme(theme: &str) -> Self {
@@ -194,23 +161,6 @@ mod tests {
             }
         }
         assert_eq!(Palette::for_theme("unknown"), Palette::for_theme("paper"));
-    }
-
-    #[test]
-    fn qr_tones_follow_active_palette() {
-        let cases = [
-            ("paper", [0x9F4937, 0x794963, 0x526741, 0x826025]),
-            ("forest", [0x326855, 0x276D79, 0x465F91, 0x71577C]),
-            ("blue", [0x385989, 0x5E5193, 0x2F7273, 0x845066]),
-            ("plum", [0x805369, 0x565A93, 0x326D72, 0x9B4F64]),
-        ];
-        for (theme, expected) in cases {
-            assert_eq!(
-                Palette::for_theme(theme).qr_tones(),
-                expected.map(Rgb::hex),
-                "{theme}"
-            );
-        }
     }
 
     #[test]

@@ -14,6 +14,10 @@ impl Studio {
                     {
                         if let Ok(options) = c.default_options() {
                             self.options = options;
+                            if let Some(&(track, channel)) = c.state.keys.first() {
+                                self.options.track = Some(track);
+                                self.options.channel = Some(channel);
+                            }
                         }
                     }
                     should_redraw = !events.is_empty() || c.state.transport == Transport::Playing;
@@ -65,17 +69,34 @@ impl Studio {
                 }
                 self.save_version = None;
             }
-            Message::SelectSong(Some(row)) => {
-                self.library_menu = false;
-                if let Some(index) = self.filtered_library().get(row).copied() {
-                    let entry = self.controller.as_ref().unwrap().library[index].clone();
+            Message::SelectLibraryPath(path) => {
+                if !self
+                    .controller
+                    .as_ref()
+                    .is_some_and(|c| c.capabilities().can_open)
+                {
+                    return;
+                }
+                if let Some(entry) = self
+                    .controller
+                    .as_ref()
+                    .and_then(|c| c.library.iter().find(|e| e.path == path))
+                    .cloned()
+                {
+                    self.library_menu = false;
                     let options = entry.options.and_then(|v| serde_json::from_value(v).ok());
                     self.perform(|c| open_document(c, &entry.path, options));
+                } else {
+                    self.error = "这首曲目已移出曲库，请刷新后重试。".into();
                 }
             }
+            Message::LibrarySearch(query) => self.library_query = query,
             Message::LibraryMenu => {
                 self.library_menu = !self.library_menu;
-                self.perform(|c| c.refresh_library());
+                if self.library_menu {
+                    self.library_query.clear();
+                    self.perform(|c| c.refresh_library());
+                }
             }
             Message::DismissLibrary => self.library_menu = false,
             Message::LibraryFolder => {
@@ -257,7 +278,6 @@ impl Studio {
                 };
                 self.perform(|c| c.seek_audio(value));
             }
-            Message::QrStyle(artistic) => self.qr_artistic = artistic,
             Message::RemoteAddress(Some(index)) => self.remote_address = index,
             Message::CopyRemote => {
                 if let Some(url) = self.phone_url() {

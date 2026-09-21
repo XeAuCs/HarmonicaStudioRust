@@ -38,6 +38,7 @@ impl AppController {
                 self.state.parts.clear();
                 self.state.names.clear();
                 self.state.keys.clear();
+                self.state.recommendations.clear();
                 self.source_options = options.clone();
                 self.state.selected_part = options.and_then(|o| o.track.zip(o.channel));
                 let root = self.home.join("song-projects");
@@ -96,6 +97,7 @@ impl AppController {
                 self.state.parts.clear();
                 self.state.names.clear();
                 self.state.keys.clear();
+                self.state.recommendations.clear();
                 self.events.push(ControllerEvent::Document);
                 self.status("新曲谱已建立。");
             }
@@ -207,6 +209,7 @@ impl AppController {
                 self.state.parts.clear();
                 self.state.names.clear();
                 self.state.keys.clear();
+                self.state.recommendations.clear();
                 self.events.push(ControllerEvent::Document);
                 self.status("工程已打开，可以继续编辑。");
             }
@@ -214,6 +217,7 @@ impl AppController {
                 self.state.parts = loaded.parts;
                 self.state.names = loaded.names;
                 self.state.keys = loaded.keys;
+                self.state.recommendations = loaded.recommendations;
                 if !self
                     .state
                     .selected_part

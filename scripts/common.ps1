@@ -160,7 +160,9 @@ function Install-PortableTree {
     param([Parameter(Mandatory=$true)][string]$Source,
           [Parameter(Mandatory=$true)][string]$Destination,
           [Parameter(Mandatory=$true)][string]$Rollback,
-          [scriptblock]$BeforeReplace)
+          [scriptblock]$BeforeReplace,
+          [switch]$MigrateLegacy,
+          [scriptblock]$BeforeLegacyRemove)
     $sourceRoot = [IO.Path]::GetFullPath($Source).TrimEnd('\','/')
     $destinationRoot = [IO.Path]::GetFullPath($Destination).TrimEnd('\','/')
     $rollbackRoot = [IO.Path]::GetFullPath($Rollback).TrimEnd('\','/')
@@ -186,7 +188,20 @@ function Install-PortableTree {
         $backup = Assert-ChildPath (Join-Path $rollbackRoot $relative) $rollbackRoot
         $plan.Add([PSCustomObject]@{Source=$file.FullName;Target=$target;Backup=$backup;Existed=($null -ne $old);Relative=$relative})
     }
+    $legacy=@()
+    if ($MigrateLegacy) {
+        . (Join-Path $PSScriptRoot 'portable-migration.ps1')
+        $legacy=@(Get-LegacyMigrationPlan $sourceRoot $destinationRoot $rollbackRoot)
+        foreach($item in $legacy) {
+            if (-not $item.Different) { continue }
+            Assert-NoLinksInPath $item.ArchiveTarget
+            if (Get-ExistingItem $item.ArchiveTarget) { throw '旧文件备份路径已存在。' }
+            $plan.Add([PSCustomObject]@{Source=$item.Target;Target=$item.ArchiveTarget;Backup='';Existed=$false;Relative=$item.ArchiveRelative})
+            $preserved++
+        }
+    }
     $installed = [Collections.Generic.List[object]]::new()
+    $removed = [Collections.Generic.List[object]]::new()
     try {
         for ($index=0; $index -lt $plan.Count; $index++) {
             $item = $plan[$index]
@@ -203,10 +218,28 @@ function Install-PortableTree {
         }
         Assert-NoLinksInPath (Join-Path $destinationRoot 'data')
         New-Item -ItemType Directory -Path (Join-Path $destinationRoot 'data') -Force | Out-Null
-        return [PSCustomObject]@{Installed=$installed.Count;Preserved=$preserved}
+        foreach($item in $legacy) {
+            Assert-NoLinksInPath $item.Target
+            Assert-NoLinksInPath $item.Backup
+            New-Item -ItemType Directory -Path ([IO.Path]::GetDirectoryName($item.Backup)) -Force | Out-Null
+            Copy-Item -LiteralPath $item.Target -Destination $item.Backup
+            if ($BeforeLegacyRemove) { & $BeforeLegacyRemove $removed.Count $item }
+            Remove-Item -LiteralPath $item.Target -Force
+            $removed.Add($item)
+        }
+        foreach($item in $removed) { Remove-EmptyLegacyParents $item.Target $destinationRoot }
+        return [PSCustomObject]@{Installed=$installed.Count;Preserved=$preserved;Migrated=$removed.Count}
     } catch {
         $original = $_.Exception
         $failures = [Collections.Generic.List[string]]::new()
+        for ($index=$removed.Count-1; $index -ge 0; $index--) {
+            $item=$removed[$index]
+            try {
+                Assert-NoLinksInPath $item.Target
+                New-Item -ItemType Directory -Path ([IO.Path]::GetDirectoryName($item.Target)) -Force | Out-Null
+                Replace-FileAtomically -Source $item.Backup -Target $item.Target -Existed ([bool](Get-ExistingItem $item.Target))
+            } catch { $failures.Add($item.Relative+'：'+$_.Exception.Message) }
+        }
         for ($index=$installed.Count-1; $index -ge 0; $index--) {
             $item = $installed[$index]
             try {
@@ -284,11 +317,33 @@ function Copy-NugetNotices([string]$PackagePath,[string]$Destination,[string]$Ex
         return [PSCustomObject]@{name=$ExpectedName;version=$ExpectedVersion;files=@($entries | ForEach-Object {$_.FullName});source=('https://www.nuget.org/packages/'+$ExpectedName+'/'+$ExpectedVersion)}
     } finally { $zip.Dispose() }
 }
-function Set-CargoPackageVersion([string]$ManifestPath,[string]$Version) {
+function Assert-CargoPackageVersion([string]$Version) {
     $pattern='^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-(?<pre>[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$'
     $versionMatch=[regex]::Match($Version,$pattern)
     if(-not $versionMatch.Success){throw '目标版本必须为 SemVer，例如 2.0.0 或 2.0.0-alpha.1。'}
     foreach($part in ($versionMatch.Groups['pre'].Value -split '\.')){if($part -match '^\d+$' -and $part.Length -gt 1 -and $part.StartsWith('0')){throw 'SemVer 数字预发布标识不能以零开头。'}}
+}
+function Get-CargoPackageVersion([string]$ManifestPath) {
+    Assert-NoLinksInPath $ManifestPath
+    $manifest=[IO.File]::ReadAllText($ManifestPath)
+    $package=[regex]::Match($manifest,'(?ms)^\[package\][ \t]*\r?\n.*?(?=^\[|\z)')
+    if(-not $package.Success){throw 'Cargo.toml 缺少 package 配置。'}
+    $versions=[regex]::Matches($package.Value,'(?m)^version[ \t]*=[ \t]*"(?<value>[^"\r\n]+)"[ \t]*\r?$')
+    if($versions.Count -ne 1){throw '无法确定唯一的项目版本声明。'}
+    return $versions[0].Groups['value'].Value
+}
+function Read-BuildVersion([string]$CurrentVersion, [scriptblock]$ReadValue = { Read-Host '输入新版本号（直接回车保持当前版本）' }) {
+    Write-Host "当前版本：$CurrentVersion"
+    Write-Host '默认不更新版本；例如可输入 2.0.0 或 2.0.0-alpha.2。'
+    while($true) {
+        $value=([string](& $ReadValue)).Trim()
+        if(-not $value -or $value -eq $CurrentVersion){return ''}
+        try { Assert-CargoPackageVersion $value; return $value }
+        catch { Write-Host ('版本号无效：'+$_.Exception.Message) }
+    }
+}
+function Set-CargoPackageVersion([string]$ManifestPath,[string]$Version) {
+    Assert-CargoPackageVersion $Version
     Assert-NoLinksInPath $ManifestPath
     $manifest=[IO.File]::ReadAllText($ManifestPath)
     $package=[regex]::Match($manifest,'(?ms)^\[package\][ \t]*\r?\n.*?(?=^\[|\z)')

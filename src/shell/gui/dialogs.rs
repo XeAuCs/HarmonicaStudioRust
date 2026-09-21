@@ -1,77 +1,6 @@
 use super::*;
 
 impl Studio {
-    pub(super) fn library_popup(&self, context: &ViewContext<Self>, p: &Palette) -> View {
-        let c = self.controller.as_ref().unwrap();
-        let mut rows = Vec::new();
-        for (index, item) in c.library.iter().enumerate() {
-            let title = item.duration_seconds.map_or(item.title.clone(), |d| {
-                format!("{}  /  {d:.0} 秒", item.title)
-            });
-            rows.push(ui_button(
-                context,
-                &title,
-                Message::SelectSong(Some(index)),
-                true,
-                false,
-                p,
-            ));
-        }
-        if rows.is_empty() {
-            rows.push(
-                label(
-                    if c.library_root().is_dir() {
-                        "文件夹中还没有 MIDI"
-                    } else {
-                        "曲库文件夹不存在"
-                    },
-                    13.0,
-                    p,
-                )
-                .foreground(p.muted.native())
-                .into(),
-            );
-        }
-        let songs = ScrollViewer::new()
-            .max_height(360.0)
-            .vertical_scroll_bar_visibility(ScrollBarVisibility::Auto)
-            .content(
-                StackPanel::new().spacing(1.0).keyed_children(
-                    rows.into_iter()
-                        .enumerate()
-                        .map(|(i, v)| (i.to_string(), v)),
-                ),
-            );
-        card(p)
-            .width(370.0)
-            .padding(6.0)
-            .horizontal_alignment(HorizontalAlignment::Right)
-            .vertical_alignment(VerticalAlignment::Top)
-            .margin(Thickness::new(0.0, 146.0, 138.0, 0.0))
-            // The popup overlays `main` as a sibling of the themed body Border,
-            // so it carries the same resource table instead of relying on
-            // inheritance. Buttons inside additionally carry per-Button aliases.
-            .resource_overrides(theme_resources(p))
-            .content(
-                StackPanel::new().spacing(4.0).children((
-                    songs,
-                    Border::new()
-                        .height(1.0)
-                        .background(p.line.native())
-                        .content(View::empty()),
-                    ui_button(
-                        context,
-                        "打开曲库文件夹",
-                        Message::LibraryFolder,
-                        true,
-                        false,
-                        p,
-                    ),
-                    ui_button(context, "刷新曲库", Message::Refresh, true, false, p),
-                    ui_button(context, "曲库设置…", Message::Settings, true, false, p),
-                )),
-            )
-    }
     pub(super) fn settings_view(&self, context: &ViewContext<Self>, p: &Palette) -> View {
         let c = self.controller.as_ref().unwrap();
         let prefs = self.settings_draft.as_ref().unwrap_or(&c.preferences);
@@ -116,7 +45,8 @@ impl Studio {
         let c = self.controller.as_ref().unwrap();
         let url = self.phone_url();
         let addresses = c.remote_addresses();
-        let qr = url
+        let connected = c.remote_client_connected();
+        let qr: View = url
             .as_ref()
             .and_then(|u| {
                 qrcode::QrCode::with_error_correction_level(u.as_bytes(), qrcode::EcLevel::M).ok()
@@ -128,46 +58,128 @@ impl Studio {
                     .iter()
                     .map(|v| *v == qrcode::Color::Dark)
                     .collect::<Vec<_>>();
-                let palette = Rc::clone(&self.canvas_theme);
                 let invalidator = self.invalidator.clone();
-                let artistic = self.qr_artistic;
+                let background = p.surface.canvas();
                 Border::new()
-                    .height(300.0)
+                    .width(260.0)
+                    .height(260.0)
+                    .horizontal_alignment(HorizontalAlignment::Center)
                     .content(windows_canvas::Canvas::invalidated(
                         &invalidator,
-                        move |ctx| draw_qr(ctx, size, &pixels, artistic, &palette.borrow()),
+                        move |ctx| draw_qr(ctx, size, &pixels, background),
                     ))
+                    .into()
             })
-            .unwrap_or_else(|| label("遥控已关闭", 13.0, p).into());
-        let pairing = card(p)
-            .padding(Thickness::new(18.0, 12.0, 18.0, 12.0))
+            .unwrap_or_else(|| label("二维码暂不可用，请重新开启遥控。", 13.0, p).into());
+        let status = Border::new()
+            .background(p.surface.native())
+            .corner_radius(12.0)
+            .padding(Thickness::new(10.0, 5.0, 10.0, 5.0))
+            .vertical_alignment(VerticalAlignment::Center)
+            .grid_column(1)
             .content(
-                StackPanel::new().children((
-                    Grid::new()
-                        .columns([GridLength::Pixel(30.0), GridLength::STAR, GridLength::Auto])
-                        .children((
-                            logo(30.0),
-                            label("口琴工坊", 14.0, p)
-                                .font_weight(FontWeight::SEMI_BOLD)
-                                .grid_column(1)
-                                .margin(Thickness::new(8.0, 0.0, 0.0, 0.0))
-                                .vertical_alignment(VerticalAlignment::Center),
-                            label("随手选曲 · 随时演奏", 10.0, p)
-                                .foreground(p.muted.native())
-                                .grid_column(2)
-                                .vertical_alignment(VerticalAlignment::Center),
-                        )),
+                label(
+                    if connected {
+                        "● 已连接"
+                    } else {
+                        "○ 等待连接"
+                    },
+                    11.0,
+                    p,
+                )
+                .foreground(if connected {
+                    p.accent.native()
+                } else {
+                    p.muted.native()
+                }),
+            );
+        let pairing = Border::new()
+            .background(p.surface.native())
+            .border_brush(p.line.native())
+            .border_thickness(1.0)
+            .corner_radius(6.0)
+            .padding(16.0)
+            .content(
+                StackPanel::new().spacing(8.0).children((
                     qr,
-                    ornament(&self.canvas_theme, &self.invalidator),
+                    label(
+                        if connected {
+                            "手机已就绪，可以选曲了"
+                        } else {
+                            "用手机浏览器扫码连接"
+                        },
+                        13.0,
+                        p,
+                    )
+                    .horizontal_alignment(HorizontalAlignment::Center),
                 )),
             );
-        Border::new().width(468.0).background(p.background.native()).border_brush(p.line.native()).border_thickness(1.0).padding(Thickness::new(24.0,20.0,24.0,22.0)).content(StackPanel::new().spacing(12.0).children((
-            Grid::new().columns([GridLength::STAR,GridLength::Auto]).children((label("手机遥控",20.0,p).font_weight(FontWeight::SEMI_BOLD),label(if c.remote_client_connected(){"手机已连接"}else if c.remote_url().is_some(){"等待手机连接"}else{"遥控已关闭"},12.0,p).foreground(p.muted.native()).grid_column(1).vertical_alignment(VerticalAlignment::Center))),
-            label("扫码，在手机浏览器中选曲与控制播放。",12.0,p).foreground(p.muted.native()),pairing,
-            Grid::new().columns([GridLength::STAR,GridLength::Auto]).children((label("二维码样式",12.0,p).foreground(p.muted.native()).vertical_alignment(VerticalAlignment::Center),StackPanel::new().orientation(Orientation::Horizontal).spacing(6.0).grid_column(1).children((ui_button(context,"线条码",Message::QrStyle(true),true,self.qr_artistic,p),ui_button(context,"标准码",Message::QrStyle(false),true,!self.qr_artistic,p))))),
-            Grid::new().columns([GridLength::Auto,GridLength::STAR]).children((label("连接网络",12.0,p).foreground(p.muted.native()).vertical_alignment(VerticalAlignment::Center).margin(Thickness::new(0.0,0.0,12.0,0.0)),ComboBox::new().items_source(addresses.iter().map(|(name,ip)|format!("{name}  /  {ip}")).collect::<Vec<_>>()).selected_index(self.remote_address).on_selection_changed(context.callback(Message::RemoteAddress)).horizontal_alignment(HorizontalAlignment::Stretch).grid_column(1))),
-            label("手机与电脑需在同一局域网，声音由电脑播放。\n识别不顺时可切换标准码；重新开启遥控后请重新扫码。",12.0,p).foreground(p.muted.native()).text_wrapping(TextWrapping::Wrap),
-            Grid::new().columns([GridLength::STAR,GridLength::STAR,GridLength::STAR]).children((ui_button(context,"复制连接",Message::CopyRemote,url.is_some(),false,p),Border::new().grid_column(1).margin(Thickness::new(6.0,0.0,0.0,0.0)).content(ui_button(context,"收起",Message::Phone,true,true,p)),Border::new().grid_column(2).margin(Thickness::new(6.0,0.0,0.0,0.0)).content(ui_button(context,"关闭遥控",Message::StopRemote,true,false,p)))),
-        )))
+        let network = StackPanel::new().spacing(8.0).children((
+            Grid::new()
+                .columns([GridLength::STAR, GridLength::Auto])
+                .children((
+                    label("连接网络", 12.0, p).font_weight(FontWeight::SEMI_BOLD),
+                    label("与手机连接同一 Wi-Fi", 11.0, p)
+                        .foreground(p.muted.native())
+                        .grid_column(1),
+                )),
+            ComboBox::new()
+                .items_source(
+                    addresses
+                        .iter()
+                        .map(|(name, ip)| format!("{name}  ·  {ip}"))
+                        .collect::<Vec<_>>(),
+                )
+                .selected_index(self.remote_address)
+                .on_selection_changed(context.callback(Message::RemoteAddress))
+                .horizontal_alignment(HorizontalAlignment::Stretch),
+        ));
+        let actions = Grid::new()
+            .columns([GridLength::STAR, GridLength::STAR])
+            .children((
+                ui_button(
+                    context,
+                    "复制链接",
+                    Message::CopyRemote,
+                    url.is_some(),
+                    false,
+                    p,
+                ),
+                Border::new()
+                    .grid_column(1)
+                    .margin(Thickness::new(8.0, 0.0, 0.0, 0.0))
+                    .content(ui_button(context, "完成", Message::Phone, true, true, p)),
+            ));
+        Border::new()
+            .width(420.0)
+            .background(p.background.native())
+            .border_brush(p.line.native())
+            .border_thickness(1.0)
+            .padding(24.0)
+            .content(
+                StackPanel::new().spacing(16.0).children((
+                    Grid::new()
+                        .columns([GridLength::STAR, GridLength::Auto])
+                        .children((
+                            label("手机遥控", 22.0, p).font_weight(FontWeight::SEMI_BOLD),
+                            status,
+                        )),
+                    label("手机选曲与控制，声音从电脑播放。", 12.0, p).foreground(p.muted.native()),
+                    pairing,
+                    network,
+                    actions,
+                    Grid::new()
+                        .columns([GridLength::STAR, GridLength::Auto])
+                        .children((
+                            label("完成后仍可继续遥控", 11.0, p)
+                                .foreground(p.muted.native())
+                                .vertical_alignment(VerticalAlignment::Center),
+                            HyperlinkButton::new()
+                                .grid_column(1)
+                                .on_click(context.callback(|_| Message::StopRemote))
+                                .content(label("关闭遥控", 12.0, p).foreground(p.muted.native())),
+                        )),
+                )),
+            )
     }
 }

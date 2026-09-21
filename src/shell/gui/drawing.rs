@@ -411,89 +411,29 @@ pub(super) fn draw_qr(
     ctx: &DrawContext,
     size: usize,
     pixels: &[bool],
-    artistic: bool,
-    p: &Palette,
+    background: ColorF,
 ) -> windows_canvas::Result<()> {
-    ctx.clear(if artistic {
-        p.surface.canvas()
-    } else {
-        ColorF::WHITE
-    });
-    let solid = ctx.create_solid_brush(ColorF::from_rgb8(32, 32, 32))?;
-    let paper = ctx.create_solid_brush(p.surface.canvas())?;
-    // Artistic QR tones are derived from the shared Palette (see
-    // Palette::qr_tones). No fixed blue/purple/green survives a theme switch.
-    let tones = p.qr_tones();
-    let gradient = ctx.create_linear_gradient(
-        Vector2::new(0.0, 0.0),
-        Vector2::new(ctx.width, ctx.height),
-        &[
-            GradientStop::new(0.0, tones[0].canvas()),
-            GradientStop::new(0.33, tones[1].canvas()),
-            GradientStop::new(0.66, tones[2].canvas()),
-            GradientStop::new(1.0, tones[3].canvas()),
-        ],
-    )?;
+    // The WinUI swap-chain host shows white behind transparent clears.
+    // Match the surrounding card while preserving the four-module quiet zone.
+    ctx.clear(background);
+    let ink = ctx.create_solid_brush(ColorF::from_rgb8(0, 0, 0))?;
     let unit = (ctx.width.min(ctx.height) / (size as f32 + 8.0))
         .floor()
         .max(1.0);
     let x = (ctx.width - unit * size as f32) / 2.0;
     let y = (ctx.height - unit * size as f32) / 2.0;
     for row in 0..size {
-        let mut col = 0;
-        while col < size {
-            if !pixels[row * size + col] {
-                col += 1;
-                continue;
-            }
-            let mut end = col + 1;
-            if artistic {
-                while end < size && pixels[row * size + end] {
-                    end += 1;
-                }
-            }
-            let rect = CanvasRect::from_xywh(
-                x + col as f32 * unit,
-                y + row as f32 * unit,
-                (end - col) as f32 * unit,
-                unit,
-            );
-            if artistic {
-                let inset = unit * 0.06;
-                let r = CanvasRect::new(
-                    rect.left + inset,
-                    rect.top + inset,
-                    rect.right - inset,
-                    rect.bottom - inset,
-                );
-                ctx.fill_rounded_rect(
-                    &RoundedRect::new(r, (unit - 2.0 * inset) / 2.0, (unit - 2.0 * inset) / 2.0),
-                    &gradient,
-                );
-            } else {
-                ctx.fill_rect(&rect, &solid);
-            }
-            col = end;
-        }
-    }
-    if artistic {
-        for (fx, fy) in [(0, 0), (size - 7, 0), (0, size - 7)] {
-            for (inset, width, radius) in [(0.0, 7.0, 1.15), (1.0, 5.0, 0.85), (2.0, 3.0, 1.0)] {
-                let r = RoundedRect::new(
-                    CanvasRect::from_xywh(
-                        x + (fx as f32 + inset) * unit,
-                        y + (fy as f32 + inset) * unit,
-                        width * unit,
-                        width * unit,
+        for col in 0..size {
+            if pixels[row * size + col] {
+                ctx.fill_rect(
+                    &CanvasRect::from_xywh(
+                        x + col as f32 * unit,
+                        y + row as f32 * unit,
+                        unit,
+                        unit,
                     ),
-                    radius * unit,
-                    radius * unit,
+                    &ink,
                 );
-                if inset == 1.0 {
-                    ctx.fill_rounded_rect(&r, &paper);
-                } else {
-                    ctx.fill_rounded_rect(&r, &gradient);
-                }
             }
         }
     }

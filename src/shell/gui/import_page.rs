@@ -46,6 +46,10 @@ impl Studio {
                         count.to_string(),
                         format!("{} – {}", pitch_name(min), pitch_name(max)),
                         format!("{duration:.1} 秒"),
+                        format!(
+                            "{:.1}",
+                            c.state.recommendations.get(key).copied().unwrap_or(0.0)
+                        ),
                     ]
                 })
                 .collect();
@@ -55,9 +59,58 @@ impl Studio {
             .iter()
             .enumerate()
             .map(|(index, values)| {
+                let active = c.state.keys.get(index).copied() == selected;
+                let background = if active { p.selection } else { p.surface };
                 (
-                    index.to_string(),
-                    ListViewItem::new().content(table_row(values.clone(), p, false)),
+                    format!("{:?}", c.state.keys[index]),
+                    Border::new()
+                        .background(background.native())
+                        .corner_radius(4.0)
+                        .content(
+                            Grid::new().children((
+                                Button::new()
+                                    .style(ButtonStyle::Subtle)
+                                    .resource_overrides(
+                                        button_resources(p, false)
+                                            .set("ButtonBackground", Color::argb(0, 0, 0, 0))
+                                            .set(
+                                                "ButtonBackgroundPointerOver",
+                                                Color::argb(0, 0, 0, 0),
+                                            )
+                                            .set("ButtonBackgroundPressed", Color::argb(0, 0, 0, 0))
+                                            .set("ButtonBorderBrush", Color::argb(0, 0, 0, 0))
+                                            .set(
+                                                "ButtonBorderBrushPointerOver",
+                                                Color::argb(0, 0, 0, 0),
+                                            )
+                                            .set(
+                                                "ButtonBorderBrushPressed",
+                                                Color::argb(0, 0, 0, 0),
+                                            )
+                                            .set(
+                                                "ButtonBorderThemeThickness",
+                                                Thickness::uniform(0.0),
+                                            )
+                                            .set("ButtonBorderThickness", Thickness::uniform(0.0)),
+                                    )
+                                    .horizontal_alignment(HorizontalAlignment::Stretch)
+                                    .horizontal_content_alignment(HorizontalAlignment::Stretch)
+                                    .is_enabled(enabled)
+                                    .on_click(context.message(Message::SelectPart(Some(index))))
+                                    .content(table_row(values.clone(), p, false)),
+                                Border::new()
+                                    .width(3.0)
+                                    .height(16.0)
+                                    .corner_radius(1.5)
+                                    .horizontal_alignment(HorizontalAlignment::Left)
+                                    .vertical_alignment(VerticalAlignment::Center)
+                                    .background(if active {
+                                        p.accent.native()
+                                    } else {
+                                        Color::argb(0, 0, 0, 0)
+                                    }),
+                            )),
+                        ),
                 )
             })
             .collect::<Vec<_>>();
@@ -75,18 +128,15 @@ impl Studio {
                             "音符".into(),
                             "音域".into(),
                             "时长".into(),
+                            "推荐指数".into(),
                         ],
                         p,
                         true,
                     )),
-                ListView::new()
-                    .items(rows)
-                    .selection_mode(ListViewSelectionMode::Single)
-                    .selected_index(
-                        selected.and_then(|key| c.state.keys.iter().position(|k| *k == key)),
-                    )
-                    .on_selection_changed(context.callback(Message::SelectPart))
-                    .grid_row(1),
+                ScrollViewer::new()
+                    .vertical_scroll_bar_visibility(ScrollBarVisibility::Auto)
+                    .grid_row(1)
+                    .content(StackPanel::new().spacing(2.0).keyed_children(rows)),
             ));
         let left = card(p).content(
             Grid::new()
@@ -98,7 +148,7 @@ impl Studio {
                             "支持 MIDI / KAR / RMID。带 ★ 的是推荐声部，已排除打击乐。".into()
                         } else {
                             format!(
-                                "{} 个声部 · 已排除打击乐 · 原文件保持不变",
+                                "{} 个声部 · 按推荐指数排序（满分 100）· 已排除打击乐",
                                 c.state.parts.len()
                             )
                         },

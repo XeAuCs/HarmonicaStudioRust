@@ -1,4 +1,4 @@
-﻿param([string]$Version='', [string]$DistPath='', [switch]$Console)
+﻿param([string]$Version='', [string]$DistPath='', [switch]$Console, [switch]$PromptVersion)
 trap {
     if ($runLogs -and (Test-Path -LiteralPath $runLogs)) {
         $_ | Format-List * -Force | Out-String -Width 240 | Out-File -LiteralPath (Join-Path $runLogs 'failure.log') -Encoding UTF8
@@ -20,6 +20,7 @@ $destination=Join-Path $DistPath 'HarmonicaStudio'
 $targetExe=Join-Path $destination 'HarmonicaStudio.exe'
 Assert-NoLinksInPath $destination
 Assert-PortableNotRunning $targetExe
+Assert-PortableNotRunning (Join-Path $destination 'program\HarmonicaStudio.exe')
 Assert-NoPython
 $verification=Join-Path $ProjectRoot 'verification'
 $buildRoot=Join-Path $ProjectRoot 'build'
@@ -40,9 +41,19 @@ try {
     $transcribing=$true
     Push-Location $ProjectRoot
     $pushed=$true
-    if ($Version) {
-        Set-CargoPackageVersion -ManifestPath (Join-Path $ProjectRoot 'Cargo.toml') -Version $Version
+    $manifestPath=Join-Path $ProjectRoot 'Cargo.toml'
+    $currentVersion=Get-CargoPackageVersion $manifestPath
+    $Version=$Version.Trim()
+    if($PromptVersion -and -not $Version){$Version=Read-BuildVersion $currentVersion}
+    if ($Version -and $Version -ne $currentVersion) {
+        Assert-CargoPackageVersion $Version
+        $packageVersion=$Version
+        Write-Host "版本号：$currentVersion → $packageVersion"
+        Set-CargoPackageVersion -ManifestPath $manifestPath -Version $Version
         Invoke-LoggedCommand -Executable $cargo -Arguments @('update','--offline','-p','harmonica-studio') -LogPath (Join-Path $runLogs 'version.log') -Label '版本同步（源码版本可能已变更，旧便携版仍保留）'
+    } else {
+        $packageVersion=$currentVersion
+        Write-Host "版本号：$packageVersion（保持不变）"
     }
     Write-Host '[2/6] 运行自动检查'
     & (Join-Path $PSScriptRoot 'test.ps1') -LogDirectory $runLogs -NoBanner
@@ -51,30 +62,42 @@ try {
     Write-Host '[4/6] 收集运行资源与许可证'
     $release=Join-Path $ProjectRoot 'target\release'
     Assert-NoLinksInPath $release
-    Copy-Item -LiteralPath (Join-Path $release 'HarmonicaStudio.exe') -Destination $portable
+    $program=Join-Path $portable 'program'
+    New-Item -ItemType Directory -Path $program -Force | Out-Null
+    $rustc=Join-Path (Split-Path -Parent $cargo) 'rustc.exe'
+    $launcherBuild=Join-Path $stage 'launcher'
+    New-Item -ItemType Directory -Path $launcherBuild -Force | Out-Null
+    $launcherExe=Join-Path $launcherBuild 'HarmonicaStudio.exe'
+    Invoke-LoggedCommand -Executable $rustc -Arguments @('--edition=2024','--crate-name','harmonica_launcher','-C','opt-level=s','-C','target-feature=+crt-static','-C',('link-arg='+(Join-Path $release 'studio-launcher.res')),(Join-Path $ProjectRoot 'src\launcher.rs'),'-o',$launcherExe) -LogPath (Join-Path $runLogs 'launcher.log') -Label '便携启动器编译'
+    Copy-Item -LiteralPath $launcherExe -Destination $portable
+    Copy-Item -LiteralPath (Join-Path $release 'HarmonicaStudio.exe') -Destination $program
+    [IO.File]::WriteAllText((Join-Path $program 'portable-layout.txt'),'harmonica-studio-portable-v2',[Text.UTF8Encoding]::new($false))
     foreach($name in Get-PortableRuntimeNames) {
         $runtimeFile=Join-Path $release $name
         $item=Get-Item -LiteralPath $runtimeFile
-        if($item.PSIsContainer) {Copy-CheckedTree $runtimeFile (Join-Path $portable $name)}
-        else {Assert-NoLinksInPath $runtimeFile; Copy-Item -LiteralPath $runtimeFile -Destination $portable}
+        if($item.PSIsContainer) {Copy-CheckedTree $runtimeFile (Join-Path $program $name)}
+        else {Assert-NoLinksInPath $runtimeFile; Copy-Item -LiteralPath $runtimeFile -Destination $program}
     }
-    foreach($name in @('assets','samples')) {Copy-CheckedTree (Join-Path $ProjectRoot $name) (Join-Path $portable $name)}
-    Copy-CheckedTree (Join-Path $ProjectRoot 'third_party\AutoHotkey') (Join-Path $portable 'third_party\AutoHotkey')
+    Copy-CheckedTree (Join-Path $ProjectRoot 'samples') (Join-Path $portable 'samples')
+    Copy-CheckedTree (Join-Path $ProjectRoot 'assets') (Join-Path $program 'assets')
+    Copy-CheckedTree (Join-Path $ProjectRoot 'third_party\AutoHotkey') (Join-Path $program 'third_party\AutoHotkey')
     foreach($name in @('LICENSE','THIRD_PARTY.md','使用说明.txt')) {
         $path=Join-Path $ProjectRoot $name
         Assert-NoLinksInPath $path
-        Copy-Item -LiteralPath $path -Destination $portable
+        $documentRoot=if($name -eq '使用说明.txt'){$portable}else{$program}
+        Copy-Item -LiteralPath $path -Destination $documentRoot
     }
-    & (Join-Path $PSScriptRoot 'collect-licenses.ps1') -Destination (Join-Path $portable 'third_party\licenses') *>&1 | Out-File -LiteralPath (Join-Path $runLogs 'licenses.log') -Encoding UTF8
+    & (Join-Path $PSScriptRoot 'collect-licenses.ps1') -Destination (Join-Path $program 'third_party\licenses') *>&1 | Out-File -LiteralPath (Join-Path $runLogs 'licenses.log') -Encoding UTF8
     New-Item -ItemType Directory -Path (Join-Path $portable 'data') -Force | Out-Null
     Write-Host '[5/6] 检查成品完整性与功能'
-    $smoke=& (Join-Path $PSScriptRoot 'smoke.ps1') -Path $portable -ExpectedVersion $Version
+    $smoke=& (Join-Path $PSScriptRoot 'smoke.ps1') -Path $portable -ExpectedVersion $packageVersion
     $smoke | Set-Content -LiteralPath (Join-Path $runLogs 'portable-smoke.json') -Encoding UTF8
     $smoke | Set-Content -LiteralPath (Join-Path $verification 'portable-smoke.json') -Encoding UTF8
     # Recheck after the build: an existing user program may have been opened meanwhile.
     Write-Host '[6/6] 安装便携版并保留已有数据'
     Assert-PortableNotRunning $targetExe
-    $installed=Install-PortableTree -Source $portable -Destination $destination -Rollback $rollback
+    Assert-PortableNotRunning (Join-Path $destination 'program\HarmonicaStudio.exe')
+    $installed=Install-PortableTree -Source $portable -Destination $destination -Rollback $rollback -MigrateLegacy
 } catch {
     $buildFailure=$_
     if ($_.Exception.Data['KeepRollback']) { $keepStage=$true }
@@ -93,6 +116,7 @@ if($buildFailure){
 if($cleanupFailures.Count){throw ($cleanupFailures -join "`n")}
 $summary = @(
     ("打包完成，用时 {0:N1} 秒。" -f $timer.Elapsed.TotalSeconds),
+    "版本号：$packageVersion",
     "程序位置：$targetExe",
     "文件处理：更新 $($installed.Installed) 个；保留 $($installed.Preserved) 个已有文件。",
     "详细日志：$runLogs"

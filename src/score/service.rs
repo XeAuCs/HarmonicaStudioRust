@@ -22,6 +22,7 @@ pub struct LoadedParts {
     pub parts: Parts,
     pub names: TrackNames,
     pub keys: Vec<PartKey>,
+    pub recommendations: std::collections::BTreeMap<PartKey, f64>,
 }
 #[derive(Clone, Debug)]
 pub struct ExportResult {
@@ -41,12 +42,16 @@ pub fn load_ranked_midi(source: &Path, cancel: &AtomicBool) -> Result<LoadedPart
     check_cancel(cancel)?;
     let (parts, names) = read_midi(source)?;
     check_cancel(cancel)?;
-    let keys = rank_parts(&parts, &names)
-        .into_iter()
-        .map(|(k, _)| k)
-        .collect();
+    let ranked = rank_parts(&parts, &names);
+    let keys = ranked.iter().map(|(k, _)| *k).collect();
+    let recommendations = ranked.into_iter().collect();
     check_cancel(cancel)?;
-    Ok(LoadedParts { parts, names, keys })
+    Ok(LoadedParts {
+        parts,
+        names,
+        keys,
+        recommendations,
+    })
 }
 fn prepare_export(
     folder: PathBuf,

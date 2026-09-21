@@ -110,7 +110,7 @@ pub fn self_test() -> Result<Value> {
         wav.starts_with(b"RIFF") && wav.len() > 44,
         "试听 WAV 格式无效。"
     );
-    let ahk = paths::application_root().join("third_party/AutoHotkey/AutoHotkey64.exe");
+    let ahk = paths::resource_root().join("third_party/AutoHotkey/AutoHotkey64.exe");
     let mut ahk_validated = false;
     #[cfg(windows)]
     if ahk.is_file() {

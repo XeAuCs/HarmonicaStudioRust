@@ -209,44 +209,9 @@ pub fn part_features(notes: &[Note], song_start: f64, song_end: f64) -> PartFeat
         duration: (median(notes.iter().map(|n| n.end - n.start)) / 0.25).min(1.0),
     }
 }
-pub fn rank_parts(parts: &Parts, names: &TrackNames) -> Vec<(PartKey, f64)> {
-    let song_start = parts
-        .values()
-        .flatten()
-        .map(|n| n.start)
-        .fold(f64::INFINITY, f64::min);
-    let song_end = parts.values().flatten().map(|n| n.end).fold(0.0, f64::max);
-    let mut ranked = Vec::new();
-    for (&key, notes) in parts.iter().filter(|(_, n)| !n.is_empty()) {
-        let label = names
-            .get(&key.0)
-            .map_or(String::new(), |n| n.to_lowercase());
-        let named = ["melody", "vocal", "lead", "主旋律", "人声"]
-            .iter()
-            .any(|s| label.contains(*s));
-        let f = part_features(notes, song_start, song_end);
-        let reachable = shifts()
-            .map(|s| {
-                notes
-                    .iter()
-                    .filter(|n| (MIN_PITCH..=MAX_PITCH).contains(&(n.pitch + s)))
-                    .count()
-            })
-            .max()
-            .unwrap_or(0) as f64
-            / notes.len() as f64;
-        let score = 0.8 * (if named { 1.0 } else { 0.0 })
-            + 3.0 * f.monophony
-            + f.coverage
-            + 0.8 * reachable
-            + 0.6 * f.continuity
-            + 0.5 * f.register
-            + 0.3 * f.duration;
-        ranked.push((key, score));
-    }
-    ranked.sort_by(|a, b| b.1.total_cmp(&a.1).then(a.0.cmp(&b.0)));
-    ranked
-}
+#[path = "recommendation.rs"]
+mod recommendation;
+pub use recommendation::rank_parts;
 pub fn note_weights(notes: &[Note]) -> Vec<f64> {
     let typical = median(notes.iter().map(|n| n.end - n.start)).max(0.001);
     notes

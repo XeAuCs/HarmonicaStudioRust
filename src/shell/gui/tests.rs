@@ -152,25 +152,6 @@ fn all_themes_derive_every_visible_surface_from_one_palette() {
     assert_eq!(Palette::for_theme("unknown"), Palette::for_theme("paper"));
 }
 #[test]
-fn artistic_qr_tones_follow_the_active_palette() {
-    // Mirrors the original QR_TONES table; forest/blue must not reuse the
-    // plum leftovers that previously hardcoded purple/green/blue.
-    let cases = [
-        ("paper", [0x9F4937, 0x794963, 0x526741, 0x826025]),
-        ("forest", [0x326855, 0x276D79, 0x465F91, 0x71577C]),
-        ("blue", [0x385989, 0x5E5193, 0x2F7273, 0x845066]),
-        ("plum", [0x805369, 0x565A93, 0x326D72, 0x9B4F64]),
-    ];
-    for (theme, expected) in cases {
-        let tones = Palette::for_theme(theme).qr_tones();
-        assert_eq!(
-            tones,
-            expected.map(Rgb::hex),
-            "{theme}: artistic QR gradient diverged from the shared palette"
-        );
-    }
-}
-#[test]
 fn theme_change_log_records_single_palette_source() {
     // The log line is the field evidence for a reported mix: it pins the
     // exact version, transition, and palette hexes without touching user

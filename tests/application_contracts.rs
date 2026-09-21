@@ -300,9 +300,14 @@ fn http(port: u16, request: String) -> String {
 fn remote_requires_bearer_and_correct_host_without_revealing_paths() {
     let dir = tempfile::tempdir().unwrap();
     let mut c = controller(dir.path());
-    let url = c.start_remote(0).unwrap();
+    let url = c.start_remote_local(0).unwrap();
+    assert!(url.starts_with("http://127.0.0.1:"));
     let before = url.split("/#token=").next().unwrap();
     let port: u16 = before.rsplit(':').next().unwrap().parse().unwrap();
+    // A wildcard listener would also occupy this address. Prove isolation using
+    // real sockets, without contacting any LAN interface or changing firewall rules.
+    let _other_loopback = std::net::TcpListener::bind(("127.0.0.2", port)).unwrap();
+    assert!(std::net::TcpListener::bind(("127.0.0.1", port)).is_err());
     let token = url.split("#token=").nth(1).unwrap();
     let answer = http(
         port,
@@ -331,7 +336,7 @@ fn remote_requires_bearer_and_correct_host_without_revealing_paths() {
 fn phone_command_is_delivered_only_when_controller_polls() {
     let dir = tempfile::tempdir().unwrap();
     let mut c = controller(dir.path());
-    let url = c.start_remote(0).unwrap();
+    let url = c.start_remote_local(0).unwrap();
     let port: u16 = url
         .split("/#token=")
         .next()

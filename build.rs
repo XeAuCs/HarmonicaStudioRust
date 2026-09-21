@@ -75,4 +75,6 @@ fn main() {
         "Windows SDK resource compiler rc.exe is required for the application icon."
     );
     println!("cargo:rustc-link-arg-bins={}", res.display());
+    // The standalone launcher reuses only icon/version resources, never the WinUI manifest.
+    fs::copy(&res, runtime.join("studio-launcher.res")).unwrap();
 }

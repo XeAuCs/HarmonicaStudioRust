@@ -23,14 +23,31 @@ pub fn application_root() -> PathBuf {
     if cfg!(debug_assertions) {
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
     } else {
+        installed_application_root(&resource_root())
+    }
+}
+pub fn resource_root() -> PathBuf {
+    if cfg!(debug_assertions) {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+    } else {
         std::env::current_exe()
             .ok()
             .and_then(|p| p.parent().map(Path::to_path_buf))
             .unwrap_or_else(|| PathBuf::from("."))
     }
 }
-pub fn resource_root() -> PathBuf {
-    application_root()
+fn installed_application_root(resources: &Path) -> PathBuf {
+    if resources
+        .file_name()
+        .is_some_and(|name| name.to_string_lossy().eq_ignore_ascii_case("program"))
+        && fs::read_to_string(resources.join("portable-layout.txt"))
+            .is_ok_and(|marker| marker.trim() == "harmonica-studio-portable-v2")
+    {
+        if let Some(parent) = resources.parent() {
+            return parent.to_path_buf();
+        }
+    }
+    resources.to_path_buf()
 }
 pub fn data_root() -> PathBuf {
     std::env::var_os("HARMONICA_STUDIO_HOME")
@@ -72,6 +89,28 @@ pub fn template_path() -> PathBuf {
 }
 pub fn icon_path() -> PathBuf {
     resource_root().join("assets/studio.ico")
+}
+
+#[cfg(test)]
+mod portable_tests {
+    use super::*;
+
+    #[test]
+    fn installed_layout_keeps_personal_root_outside_program() {
+        let temp = tempfile::tempdir().unwrap();
+        let resources = temp.path().join("program");
+        fs::create_dir(&resources).unwrap();
+        assert_eq!(installed_application_root(&resources), resources);
+        fs::write(
+            resources.join("portable-layout.txt"),
+            "harmonica-studio-portable-v2\n",
+        )
+        .unwrap();
+        assert_eq!(installed_application_root(&resources), temp.path());
+        assert_eq!(installed_application_root(temp.path()), temp.path());
+        fs::write(resources.join("portable-layout.txt"), "unrelated").unwrap();
+        assert_eq!(installed_application_root(&resources), resources);
+    }
 }
 pub fn absolute(path: &Path) -> Result<PathBuf> {
     let path = std::path::absolute(path)?;

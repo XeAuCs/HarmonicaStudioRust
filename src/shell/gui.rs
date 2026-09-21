@@ -23,6 +23,8 @@ use windows_reactor::*;
 mod controls;
 #[path = "gui/dialogs.rs"]
 mod dialogs;
+#[path = "gui/library_popup.rs"]
+mod library_popup;
 #[path = "gui/drawing.rs"]
 mod drawing;
 #[path = "gui/editor_page.rs"]
@@ -43,7 +45,7 @@ mod resources;
 #[path = "gui/tests.rs"]
 mod tests;
 
-use controls::{card, check, icon_button, label, logo, ornament, tab_button, table_row, ui_button};
+use controls::{card, check, icon_button, label, logo, tab_button, table_row, ui_button};
 #[cfg(test)]
 use drawing::key_label;
 use drawing::{Timeline, draw_qr, draw_score, draw_timeline, format_time};
@@ -63,7 +65,8 @@ enum Message {
     PickedOpen(std::result::Result<Option<PathBuf>, String>),
     Save,
     PickedSave(std::result::Result<Option<PathBuf>, String>),
-    SelectSong(Option<usize>),
+    SelectLibraryPath(PathBuf),
+    LibrarySearch(String),
     LibraryMenu,
     DismissLibrary,
     LibraryFolder,
@@ -86,7 +89,6 @@ enum Message {
     TimelineMove(PointerEventInfo),
     TimelineUp(PointerEventInfo),
     CopyRemote,
-    QrStyle(bool),
     RemoteAddress(Option<usize>),
     Phone,
     PhoneClosed,
@@ -138,12 +140,12 @@ struct Studio {
     options: Options,
     error: String,
     library_menu: bool,
+    library_query: String,
     editor_tab: bool,
     settings_draft: Option<crate::preferences::Preferences>,
     timeline: Rc<RefCell<Timeline>>,
     timeline_view: View,
     timeline_invalidator: Invalidator,
-    qr_artistic: bool,
     remote_address: usize,
     settings: bool,
     phone: bool,
@@ -158,7 +160,7 @@ struct Studio {
     smoke: bool,
     last_pointer: Option<(Instant, f64, f64)>,
     save_version: Option<(u64, u64)>,
-    part_rows: RefCell<(u64, usize, Vec<[String; 4]>)>,
+    part_rows: RefCell<(u64, usize, Vec<[String; 5]>)>,
 }
 impl Studio {
     fn perform(&mut self, action: impl FnOnce(&mut AppController) -> Result<()>) {
@@ -183,7 +185,13 @@ impl Studio {
     fn filtered_library(&self) -> Vec<usize> {
         self.controller
             .as_ref()
-            .map_or_else(Vec::new, |c| (0..c.library.len()).collect())
+            .map_or_else(Vec::new, |c| {
+                let query = self.library_query.trim().to_lowercase();
+                c.library.iter().enumerate().filter(|(_, entry)| {
+                    query.split_whitespace().all(|term| entry.title.to_lowercase().contains(term)
+                        || entry.file.to_lowercase().contains(term))
+                }).map(|(index, _)| index).collect()
+            })
     }
     fn rebuild_canvases(&mut self) {
         if let Some(sender) = self.error_sender.clone() {
@@ -410,12 +418,12 @@ impl Component for Studio {
             options,
             error,
             library_menu: false,
+            library_query: String::new(),
             editor_tab: false,
             settings_draft: None,
             timeline,
             timeline_view,
             timeline_invalidator,
-            qr_artistic: true,
             remote_address: 0,
             settings: smoke_ms.is_some()
                 && std::env::var("HARMONICA_STUDIO_SMOKE_VIEW").as_deref() == Ok("settings"),
@@ -445,7 +453,10 @@ impl Component for Studio {
             app.perform(|c| open_document(c, &path, None));
         }
         if input.remote {
-            app.perform(|c| c.start_remote(47638).map(|_| ()));
+            let isolated = app.smoke_ms.is_some();
+            app.perform(|c| {
+                if isolated { c.start_remote_local(0) } else { c.start_remote(47638) }.map(|_| ())
+            });
         }
         let sender = context.sender();
         let allowed = Rc::clone(&app.close_allowed);

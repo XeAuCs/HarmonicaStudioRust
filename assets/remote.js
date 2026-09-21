@@ -55,6 +55,7 @@
   let scoreSize = { width: 0, height: 0, ratio: 1 };
   const scoreContext = dom.scoreCanvas.getContext("2d");
   const scorePalette = { line: "#CFC8BB", accent: "#9F4937", muted: "#6E695F" };
+  const appliedPalette = {};
   const pending = new Set();
   const setText = (element, value) => { if (element.textContent !== value) element.textContent = value; };
   const finite = (value) => Number.isFinite(Number(value)) ? Math.max(0, Number(value)) : 0;
@@ -161,8 +162,11 @@
 
   function sampledPosition(now = performance.now()) {
     const sinceSample = Math.max(0, now - sample.at);
-    const elapsed = sample.running && connected ? Math.min(sinceSample, 1500) / 1000 : 0;
-    const correction = sample.correction * Math.max(0, 1 - sinceSample / 180);
+    // Keep local animation moving through a delayed poll, up to the request timeout.
+    const elapsed = sample.running && connected ? Math.min(sinceSample, 5000) / 1000 : 0;
+    // Limit clock correction to 25% of playback speed: no backward steps or brief stops.
+    const settleMs = Math.max(1000, Math.abs(sample.correction) * 4000);
+    const correction = sample.correction * Math.max(0, 1 - sinceSample / settleMs);
     return clamp(sample.position + elapsed + correction, sample.duration);
   }
 
@@ -170,7 +174,7 @@
     const previous = sampledPosition();
     const transport = currentTransport();
     const position = finite(transport.position);
-    const correction = smooth && Math.abs(previous - position) < 0.18 ? previous - position : 0;
+    const correction = smooth && Math.abs(previous - position) < 1 ? previous - position : 0;
     const duration = finite(transport.duration) || (mode === "game" ? finite(state?.duration) : 0);
     sample = { position, duration, running: transportRunning(), correction, at: performance.now() };
     sample.position = clamp(sample.position, sample.duration);
@@ -184,7 +188,10 @@
     if (!palette || typeof palette !== "object") return;
     for (const name of ["bg", "surface", "ink", "muted", "line", "accent"]) {
       if (typeof palette[name] === "string" && /^#[0-9a-f]{6}$/i.test(palette[name])) {
-        document.documentElement.style.setProperty(`--${name}`, palette[name]);
+        if (appliedPalette[name] !== palette[name]) {
+          document.documentElement.style.setProperty(`--${name}`, palette[name]);
+          appliedPalette[name] = palette[name];
+        }
         if (Object.hasOwn(scorePalette, name) && scorePalette[name] !== palette[name]) {
           scorePalette[name] = palette[name];
           scorePaintKey = "";
@@ -388,7 +395,8 @@
 
   function resizeScore() {
     const bounds = dom.scoreCanvas.getBoundingClientRect();
-    const ratio = Math.max(1, window.devicePixelRatio || 1);
+    // The small preview does not need a 3x/4x backing store on high-DPI phones.
+    const ratio = Math.min(2, Math.max(1, window.devicePixelRatio || 1));
     const width = bounds.width;
     const height = bounds.height;
     if (width <= 0 || height <= 0) return;

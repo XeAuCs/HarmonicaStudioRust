@@ -16,7 +16,9 @@
 
 迁移按原 gui、theme、editor、settings_ui、remote_ui 的布局和行为实现。不同窗口大小、系统缩放和弹窗还需要实际渲染对照；编译通过不等于视觉完全一致。
 
-便携版应整体移动。运行文件、assets、samples、third_party、data 都位于同一程序目录，不可只复制 EXE。默认曲库是 EXE 旁 samples，个人数据是 EXE 旁 data。设置支持外部曲库；HARMONICA_STUDIO_HOME 可覆盖个人数据位置。开发调试模式以此仓库根目录为应用根。
+便携版应整体移动，不可只复制 EXE。根目录保留 `HarmonicaStudio.exe`（启动器）、`使用说明.txt`、`samples/`（曲库）、`data/`（个人数据）和 `program/`（内部主程序、运行 DLL、语言资源、assets 与 third_party）。设置支持外部曲库；HARMONICA_STUDIO_HOME 可覆盖个人数据位置。开发调试模式以此仓库根目录为应用根。
+
+启动器保留调用者的参数、工作目录、输出和退出码；默认曲库及个人数据始终相对于外层便携目录。`src/launcher.rs` 由正式打包脚本独立编译，共用主程序的图标与版本资源，不链接 WinUI。请勿单独移动 program 或删除其布局标记。
 
 原 .hstudio 工程可直接打开。Rust 版使用独立 data 目录，不自动修改原项目的曲库、设置或恢复记录。
 
@@ -49,9 +51,13 @@ CoreOnly 使用 target/core-only 独立目录，且桌面 EXE 在 Cargo 中要�
     .\scripts\build.ps1
     .\scripts\build.ps1 -Version 2.0.0-alpha.1
 
+双击“打包.cmd”会显示当前版本，输入新版本号即可更新，直接回车则保持不变；输入格式错误会提示重新输入。直接运行 `scripts/build.ps1` 默认保持版本且不询问；加 `-PromptVersion` 可显示同样的交互提示，或用 `-Version` 明确指定版本。输入与当前相同的版本不会触发版本同步。
+
 打包工具是 Cargo/Rust 编译器、Windows SDK 资源编译器和 PowerShell 打包脚本。当前生成自包含 WinUI 3 的便携目录，不使用 PyInstaller，不依赖 .NET 应用运行时。
 
 统一入口依次完成源码检查、Rust 测试、构建脚本夹具测试、正式编译、资源及许可证收集、成品自测、受保护安装。失败不发布未通过自测的程序；已存在的 samples 和 data 文件保留。若安装回滚本身失败，会保留恢复文件并报告位置。
+
+升级旧平铺目录时，仅处理与新包清单对应的旧程序文件，以及明确列出的旧图标、旧项目许可证和调试文件，并移除由此变空的目录。内容不同或已废弃的旧文件备份到 `program/previous-layout/`；无法确认的个人文件留在原处。迁移与程序安装共用回滚事务。
 
 打包窗口显示六个阶段，完成后列出用时、程序位置和保留文件数量。完整日志保存到每次独立的 `verification/build-日期时间-编号/`：`rust-tests.log` 为测试详情，`*.stderr.log` 为编译器诊断，`script-tests.log` 为安装保护检查，`portable-smoke.json` 为成品自检，`summary.txt` 为成功摘要；失败记录见 `failure.log`。历史运行日志不会被后一次覆盖。
 

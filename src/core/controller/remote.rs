@@ -2,9 +2,19 @@ use super::*;
 
 impl AppController {
     pub fn start_remote(&mut self, port: u16) -> Result<String> {
+        self.start_remote_at("0.0.0.0", port)
+    }
+    /// Local-only transport for integration tests and diagnostics.
+    /// Uses the same authentication, command queue and controller workflow as LAN mode.
+    pub fn start_remote_local(&mut self, port: u16) -> Result<String> {
+        ensure!(self.remote.is_none(), "请先停止现有遥控服务，再启动本机服务。");
+        self.start_remote_at("127.0.0.1", port)?;
+        self.remote_url_for("127.0.0.1").context("本机遥控地址不可用。")
+    }
+    fn start_remote_at(&mut self, host: &str, port: u16) -> Result<String> {
         ensure!(!self.state.closed, "应用已关闭。");
         if self.remote.is_none() {
-            self.remote = Some(RemoteServer::start("0.0.0.0", port)?);
+            self.remote = Some(RemoteServer::start(host, port)?);
         }
         let state = self.remote_state();
         let remote = self.remote.as_ref().unwrap();

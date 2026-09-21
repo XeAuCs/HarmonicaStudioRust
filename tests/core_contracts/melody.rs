@@ -1,6 +1,64 @@
 use super::support::*;
 
 #[test]
+fn recommendation_prefers_sustained_melody_over_fragments_bass_and_repetition() {
+    let melody: Vec<_> = (0..64)
+        .map(|i| {
+            note(
+                [67, 69, 72, 71, 69, 67, 64, 67][i % 8],
+                i as f64 * 0.5,
+                i as f64 * 0.5 + 0.42,
+            )
+        })
+        .collect();
+    let sparse = vec![note(84, 0.0, 0.2), note(86, 31.0, 31.2)];
+    let repeated = (0..64)
+        .map(|i| note(72, i as f64 * 0.5, i as f64 * 0.5 + 0.45))
+        .collect();
+    let bass = melody
+        .iter()
+        .map(|n| Note {
+            pitch: n.pitch - 36,
+            ..n.clone()
+        })
+        .collect();
+    let held = vec![note(72, 0.0, 32.0)];
+    let parts = Parts::from([
+        ((0, 0), sparse),
+        ((1, 0), repeated),
+        ((2, 0), bass),
+        ((3, 0), held),
+        ((4, 0), melody),
+    ]);
+    let original = parts.clone();
+    let ranked = rank_parts(&parts, &TrackNames::from([(0, "Lead Melody".into())]));
+    assert_eq!(ranked[0].0, (4, 0));
+    assert!(
+        ranked
+            .iter()
+            .all(|(_, score)| score.is_finite() && (0.0..=100.0).contains(score))
+    );
+    assert!(ranked.windows(2).all(|w| w[0].1 >= w[1].1));
+    assert_eq!(parts, original);
+}
+
+#[test]
+fn recommendation_has_stable_ties_and_handles_empty_or_short_songs() {
+    assert!(rank_parts(&Parts::new(), &TrackNames::new()).is_empty());
+    let short = vec![note(72, 2.0, 2.1)];
+    let ranked = rank_parts(
+        &Parts::from([((2, 0), short.clone()), ((1, 0), short), ((0, 0), vec![])]),
+        &TrackNames::new(),
+    );
+    assert_eq!(
+        ranked.iter().map(|(k, _)| *k).collect::<Vec<_>>(),
+        vec![(1, 0), (2, 0)]
+    );
+    assert_eq!(ranked[0].1, ranked[1].1);
+    assert!(ranked[0].1.is_finite());
+}
+
+#[test]
 fn all_modes_keep_consecutive_short_notes() {
     let notes = vec![
         note(60, 0.0, 0.02),
