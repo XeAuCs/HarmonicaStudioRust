@@ -99,24 +99,50 @@ pub(super) fn tab_button(
     selected: bool,
     p: &Palette,
 ) -> View {
-    Border::new()
-        .border_brush(if editor == selected {
-            p.accent.native()
-        } else {
-            Color::argb(0, 0, 0, 0)
-        })
-        .border_thickness(Thickness::new(0.0, 0.0, 0.0, 2.0))
-        .content(
-            Button::new()
-                .resource_overrides(
-                    button_resources(p, false)
-                        .set("ButtonBackground", p.background.native())
-                        .set("ButtonBorderThickness", Thickness::uniform(0.0))
-                        .set("ButtonPadding", Thickness::xy(14.0, 8.0)),
-                )
-                .on_click(context.message(Message::SelectTab(editor)))
-                .content(label(text, 13.0, p)),
-        )
+    let active = editor == selected;
+    let transparent = Color::argb(0, 0, 0, 0);
+    Grid::new().children((
+        Button::new()
+            .style(ButtonStyle::Subtle)
+            .height(42.0)
+            .resource_overrides(
+                button_resources(p, false)
+                    .set("ButtonBackground", transparent)
+                    .set("ButtonBackgroundPointerOver", p.surface.native())
+                    .set("ButtonBackgroundPressed", p.selection.native())
+                    .set("ButtonBorderBrush", transparent)
+                    .set("ButtonBorderBrushPointerOver", transparent)
+                    .set("ButtonBorderBrushPressed", transparent)
+                    .set("ButtonBorderThemeThickness", Thickness::uniform(0.0))
+                    .set("ButtonBorderThickness", Thickness::uniform(0.0))
+                    .set("ButtonPadding", Thickness::xy(16.0, 8.0)),
+            )
+            .on_click(context.message(Message::SelectTab(editor)))
+            .content(
+                label(text, 14.0, p)
+                    .font_weight(if active {
+                        FontWeight::SEMI_BOLD
+                    } else {
+                        FontWeight::NORMAL
+                    })
+                    .foreground(if active {
+                        p.ink.native()
+                    } else {
+                        p.muted.native()
+                    }),
+            ),
+        Border::new()
+            .width(24.0)
+            .height(3.0)
+            .corner_radius(1.5)
+            .horizontal_alignment(HorizontalAlignment::Center)
+            .vertical_alignment(VerticalAlignment::Bottom)
+            .background(if active {
+                p.accent.native()
+            } else {
+                transparent
+            }),
+    ))
 }
 pub(super) fn icon_button(
     context: &ViewContext<Studio>,
