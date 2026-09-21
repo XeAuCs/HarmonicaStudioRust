@@ -1,0 +1,49 @@
+//! MIDI、口琴曲谱、导出与共享应用控制层。
+//!
+//! 物理文件按领域收进子文件夹；`#[path]` 保持逻辑路径不变，
+//! 现有 `crate::controller` 等引用与测试无需改动。
+#[path = "core/controller.rs"]
+pub mod controller;
+#[path = "core/diagnostics.rs"]
+pub mod diagnostics;
+#[path = "score/editor.rs"]
+pub mod editor;
+#[cfg(all(windows, feature = "desktop"))]
+#[path = "shell/gui.rs"]
+pub mod gui;
+#[path = "core/jobs.rs"]
+pub mod jobs;
+#[path = "content/library.rs"]
+pub mod library;
+#[path = "score/melody.rs"]
+pub mod melody;
+#[path = "score/midi.rs"]
+pub mod midi;
+#[path = "score/models.rs"]
+pub mod models;
+#[path = "score/notes.rs"]
+pub mod notes;
+#[path = "core/paths.rs"]
+pub mod paths;
+#[path = "media/playback.rs"]
+pub mod playback;
+#[path = "core/preferences.rs"]
+pub mod preferences;
+#[path = "media/preview.rs"]
+pub mod preview;
+#[path = "score/project.rs"]
+pub mod project;
+#[path = "shell/remote.rs"]
+pub mod remote;
+#[path = "score/rests.rs"]
+pub mod rests;
+#[path = "score/schedule.rs"]
+pub mod schedule;
+#[path = "score/service.rs"]
+pub mod service;
+#[path = "content/song_projects.rs"]
+pub mod song_projects;
+#[path = "shell/theme.rs"]
+pub mod theme;
+#[path = "media/transport.rs"]
+pub mod transport;

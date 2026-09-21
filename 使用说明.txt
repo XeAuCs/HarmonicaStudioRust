@@ -1,0 +1,23 @@
+口琴工坊 · Rust / WinUI 3
+
+启动：双击 HarmonicaStudio.exe。
+移动：请复制整个 HarmonicaStudio 文件夹。
+
+默认 samples 是曲库，data 保存设置、工程、恢复记录和导出。
+设置中可以选择外部曲库。HARMONICA_STUDIO_HOME 可指定个人数据目录。
+本版本不需要安装 Python。
+
+1. 打开 MIDI，在“曲谱”页选择声部和转换参数，点击“生成曲谱”。
+2. 在“编辑与试听”拖动音符调整时间和音高，拖动右边缘修改时长。
+3. 点击“试听”；“演奏”使用 AutoHotkey。F6 开始/停止，F8 退出脚本。
+4. 心动片段可以标记、跳转或清除。
+5. 右上角齿轮打开设置；手机图标打开二维码及遥控连接。
+6. Ctrl+S 可将当前工程另存为 .hstudio。
+7. data/exports 中包含工程、单旋律 MIDI、试听 WAV、按键表、AHK 脚本和转换报告。
+
+原项目和本版本使用独立数据目录。需要旧工程时，通过打开文件选择原 .hstudio。
+手机与电脑应处于可互通的网络，按遥控窗口显示的地址连接。
+
+本版本处于 Rust 迁移验收阶段。源码和自动检查记录见项目目录。
+启动错误记录写入 data/logs/startup-error.log；重构成品检查记录保存在项目 verification 目录。
+第三方许可见 THIRD_PARTY.md 和 third_party/licenses。

@@ -1,0 +1,46 @@
+[package]
+name = "harmonica-studio"
+version = "2.0.0-alpha.1"
+edition = "2024"
+rust-version = "1.95"
+description = "口琴工坊 Rust / WinUI 3"
+license = "MIT"
+build = "build.rs"
+
+[lib]
+name = "harmonica_studio"
+path = "src/lib.rs"
+
+[[bin]]
+name = "HarmonicaStudio"
+path = "src/main.rs"
+required-features = ["desktop"]
+
+[features]
+default = ["desktop"]
+desktop = ["dep:windows-reactor", "dep:windows-canvas", "dep:windows-pickers", "dep:qrcode"]
+
+[dependencies]
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["float_roundtrip"] }
+sha2 = "0.10"
+clap = { version = "4", features = ["derive"] }
+tempfile = "3"
+qrcode = { version = "0.14", default-features = false, optional = true }
+
+[target.'cfg(windows)'.dependencies]
+windows-reactor = { path = "third_party/windows-rs/crates/libs/reactor", optional = true }
+windows-canvas = { path = "third_party/windows-rs/crates/libs/canvas", optional = true, default-features = false, features = ["reactor"] }
+windows-pickers = { path = "third_party/windows-rs/crates/libs/pickers", optional = true, default-features = false, features = ["reactor"] }
+
+[build-dependencies]
+windows-reactor-setup = { path = "third_party/windows-rs/crates/libs/reactor-setup" }
+
+[dev-dependencies]
+tempfile = "3"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "debuginfo"

@@ -1,0 +1,17 @@
+/target/
+/.tools/
+/app/
+/build/
+/data/
+/verification/
+/.idea/
+
+# Local song library and user projects stay on disk, outside source history.
+/samples/*
+!/samples/*.md
+*.hstudio
+
+# Local credentials and machine-specific environment files.
+.env
+.env.*
+!.env.example
