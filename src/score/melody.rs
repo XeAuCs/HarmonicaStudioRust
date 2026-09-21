@@ -161,6 +161,9 @@ pub use features::{PartFeatures, part_features};
 #[path = "recommendation.rs"]
 mod recommendation;
 pub use recommendation::rank_parts;
+#[path = "mode_choices.rs"]
+mod mode_choices;
+pub use mode_choices::distinct_melody_modes;
 pub fn note_weights(notes: &[Note]) -> Vec<f64> {
     let typical = median(notes.iter().map(|n| n.end - n.start)).max(0.001);
     notes

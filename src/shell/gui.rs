@@ -97,7 +97,7 @@ enum Message {
     PickedLibrary(std::result::Result<Option<PathBuf>, String>),
     Speed(Option<f64>),
     Transpose(Option<f64>),
-    Mode(Option<usize>),
+    Mode(Option<String>),
     AutoOctave(bool),
     Trim(bool),
     Phrase(bool),
@@ -161,6 +161,7 @@ struct Studio {
     last_pointer: Option<(Instant, f64, f64)>,
     save_version: Option<(u64, u64)>,
     part_rows: RefCell<(u64, usize, Vec<[String; 5]>)>,
+    mode_choices: RefCell<import_page::ModeChoiceCache>,
 }
 impl Studio {
     fn perform(&mut self, action: impl FnOnce(&mut AppController) -> Result<()>) {
@@ -442,6 +443,7 @@ impl Component for Studio {
             last_pointer: None,
             save_version: None,
             part_rows: RefCell::new((u64::MAX, 0, Vec::new())),
+            mode_choices: RefCell::new(import_page::ModeChoiceCache::default()),
         };
         if app.settings {
             app.settings_draft = app.controller.as_ref().map(|c| c.preferences().clone());

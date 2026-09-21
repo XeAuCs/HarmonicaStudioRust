@@ -326,9 +326,9 @@ impl Studio {
                 self.options.speed = (v.clamp(0.25, 2.0) * 100.0).round() / 100.0;
             }
             Message::Transpose(Some(v)) => self.options.transpose = v.round() as i32,
-            Message::Mode(Some(i)) => {
-                if let Some(mode) = ["sustain", "highest", "continuous"].get(i) {
-                    self.options.melody_mode = (*mode).into();
+            Message::Mode(Some(mode)) => {
+                if ["sustain", "highest", "continuous"].contains(&mode.as_str()) {
+                    self.options.melody_mode = mode;
                 }
             }
             Message::AutoOctave(value) => self.options.auto_octave = value,

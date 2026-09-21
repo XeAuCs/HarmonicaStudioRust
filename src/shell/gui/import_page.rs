@@ -1,6 +1,12 @@
 use super::drawing::pitch_name;
 use super::*;
 
+#[derive(Default)]
+pub(super) struct ModeChoiceCache {
+    key: Option<(u64, u64, Option<crate::midi::PartKey>, Options)>,
+    choices: Vec<&'static str>,
+}
+
 impl Studio {
     pub(super) fn import_page(&self, context: &ViewContext<Self>, p: &Palette) -> View {
         let c = self.controller.as_ref().unwrap();
@@ -162,10 +168,35 @@ impl Studio {
                     Border::new().grid_row(2).content(table),
                 )),
         );
-        let mode = ["sustain", "highest", "continuous"]
+        let cache_key = (
+            c.state().document_id,
+            c.state().revision,
+            selected,
+            self.options.clone(),
+        );
+        let mut mode_cache = self.mode_choices.borrow_mut();
+        if mode_cache.key.as_ref() != Some(&cache_key) {
+            mode_cache.choices = selected
+                .and_then(|key| c.state().parts.get(&key))
+                .map(|notes| crate::melody::distinct_melody_modes(notes, &self.options))
+                .unwrap_or_default();
+            mode_cache.key = Some(cache_key);
+        }
+        let modes = mode_cache.choices.clone();
+        drop(mode_cache);
+        let mode = modes
             .iter()
             .position(|m| *m == self.options.melody_mode)
             .unwrap_or(0);
+        let mode_labels: Vec<_> = modes
+            .iter()
+            .map(|mode| match *mode {
+                "highest" => "同刻最高音",
+                "continuous" => "连续旋律（兼顾前后音）",
+                _ => "长音保护（原方式）",
+            })
+            .collect();
+        let show_modes = modes.len() > 1;
         let form = Grid::new()
             .columns([GridLength::Auto, GridLength::STAR])
             .rows([GridLength::Auto, GridLength::Auto, GridLength::Auto])
@@ -218,18 +249,30 @@ impl Studio {
                     .grid_row(1)
                     .grid_column(1)
                     .margin(Thickness::new(0.0, 0.0, 0.0, 12.0)),
-                label("提取方式", 13.0, p)
-                    .grid_row(2)
-                    .vertical_alignment(VerticalAlignment::Center)
-                    .margin(Thickness::new(0.0, 0.0, 12.0, 0.0)),
-                ComboBox::new()
-                    .items_source(["长音保护（原方式）", "同刻最高音", "连续旋律（兼顾前后音）"])
-                    .selected_index(mode)
-                    .is_enabled(enabled)
-                    .on_selection_changed(context.callback(Message::Mode))
-                    .horizontal_alignment(HorizontalAlignment::Stretch)
-                    .grid_row(2)
-                    .grid_column(1),
+                if show_modes {
+                    label("提取方式", 13.0, p)
+                        .grid_row(2)
+                        .vertical_alignment(VerticalAlignment::Center)
+                        .margin(Thickness::new(0.0, 0.0, 12.0, 0.0))
+                        .into()
+                } else {
+                    View::empty()
+                },
+                if show_modes {
+                    ComboBox::new()
+                        .items_source(mode_labels)
+                        .selected_index(mode)
+                        .is_enabled(enabled)
+                        .on_selection_changed(context.callback(move |index: Option<usize>| {
+                            Message::Mode(index.and_then(|i| modes.get(i).map(|m| (*m).to_owned())))
+                        }))
+                        .horizontal_alignment(HorizontalAlignment::Stretch)
+                        .grid_row(2)
+                        .grid_column(1)
+                        .into()
+                } else {
+                    View::empty()
+                },
             ));
         let options = StackPanel::new().spacing(12.0).children((
             label("调音", 14.0, p).font_weight(FontWeight::SEMI_BOLD),

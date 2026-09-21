@@ -1,5 +1,37 @@
 use super::support::*;
 
+#[test]
+fn equivalent_mode_choices_keep_selected_and_compare_all_note_fields() {
+    use harmonica_studio::melody::distinct_melody_modes;
+    let mono = vec![note(72, 0.0, 0.5), note(74, 0.5, 1.0), note(76, 1.0, 1.5)];
+    for mode in ["sustain", "highest", "continuous"] {
+        let options = Options {
+            melody_mode: mode.into(),
+            ..Options::default()
+        };
+        assert_eq!(distinct_melody_modes(&mono, &options), vec![mode]);
+    }
+    let mixed = vec![note(72, 0.0, 1.0), note(48, 0.25, 0.5), note(74, 1.0, 1.5)];
+    let original = mixed.clone();
+    let choices = distinct_melody_modes(&mixed, &Options::default());
+    assert_eq!(choices, vec!["sustain", "highest"]);
+    let options = Options {
+        melody_mode: "continuous".into(),
+        ..Options::default()
+    };
+    assert_eq!(
+        distinct_melody_modes(&mixed, &options),
+        vec!["continuous", "highest"]
+    );
+    // Current pitch fitting can remove a difference; changing it restores choices.
+    let very_low: Vec<_> = mixed.iter().map(|n| Note { pitch: n.pitch - 48, ..n.clone() }).collect();
+    let options = Options { auto_octave: false, ..Options::default() };
+    assert_eq!(distinct_melody_modes(&very_low, &options), vec!["sustain"]);
+    assert_eq!(distinct_melody_modes(&very_low, &Options::default()).len(), 2);
+    assert_eq!(mixed, original);
+    assert_eq!(distinct_melody_modes(&[], &Options::default()).len(), 3);
+}
+
 fn line(count: usize, start: f64, step: f64, duration: f64, pitches: &[i32]) -> Vec<Note> {
     (0..count)
         .map(|i| {
