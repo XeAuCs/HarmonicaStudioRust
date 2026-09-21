@@ -173,93 +173,36 @@ impl Studio {
                 label("速度倍率", 13.0, p)
                     .vertical_alignment(VerticalAlignment::Center)
                     .margin(Thickness::new(0.0, 0.0, 12.0, 12.0)),
-                StackPanel::new()
-                    .spacing(8.0)
+                Grid::new()
+                    .columns([GridLength::Auto, GridLength::STAR, GridLength::Auto])
                     .grid_column(1)
                     .margin(Thickness::new(0.0, 0.0, 0.0, 12.0))
                     .children((
-                        Grid::new()
-                            .columns([GridLength::Auto, GridLength::STAR, GridLength::Auto])
-                            .children((
-                                ui_button(
-                                    context,
-                                    "−",
-                                    Message::Speed(Some(self.options.speed - 0.05)),
-                                    enabled && self.options.speed > 0.25,
-                                    false,
-                                    p,
-                                ),
-                                NumberBox::new()
-                                    .minimum(0.25)
-                                    .maximum(2.0)
-                                    .small_change(0.05)
-                                    .value(self.options.speed)
-                                    .is_enabled(enabled)
-                                    .on_value_changed(context.callback(Message::Speed))
-                                    .grid_column(1)
-                                    .margin(Thickness::new(8.0, 0.0, 8.0, 0.0)),
-                                Border::new().grid_column(2).content(ui_button(
-                                    context,
-                                    "+",
-                                    Message::Speed(Some(self.options.speed + 0.05)),
-                                    enabled && self.options.speed < 2.0,
-                                    false,
-                                    p,
-                                )),
-                            )),
-                        Grid::new()
-                            .columns([GridLength::STAR, GridLength::STAR, GridLength::STAR])
-                            .children((
-                                ui_button(
-                                    context,
-                                    if (self.options.speed - 0.75).abs() < 0.001 {
-                                        "✓ 0.75×"
-                                    } else {
-                                        "0.75×"
-                                    },
-                                    Message::Speed(Some(0.75)),
-                                    enabled,
-                                    false,
-                                    p,
-                                ),
-                                Border::new()
-                                    .grid_column(1)
-                                    .margin(Thickness::new(6.0, 0.0, 6.0, 0.0))
-                                    .content(ui_button(
-                                        context,
-                                        if (self.options.speed - 1.0).abs() < 0.001 {
-                                            "✓ 原速"
-                                        } else {
-                                            "原速"
-                                        },
-                                        Message::Speed(Some(1.0)),
-                                        enabled,
-                                        false,
-                                        p,
-                                    )),
-                                Border::new().grid_column(2).content(ui_button(
-                                    context,
-                                    if (self.options.speed - 1.5).abs() < 0.001 {
-                                        "✓ 1.5×"
-                                    } else {
-                                        "1.5×"
-                                    },
-                                    Message::Speed(Some(1.5)),
-                                    enabled,
-                                    false,
-                                    p,
-                                )),
-                            )),
-                        label(
-                            format!(
-                                "当前 {:.2}× · 范围 0.25–2.00×\n每次调整 0.05，生成曲谱后生效",
-                                self.options.speed
-                            ),
-                            12.0,
+                        ui_button(
+                            context,
+                            "−",
+                            Message::Speed(Some(self.options.speed - 0.05)),
+                            enabled && self.options.speed > 0.25,
+                            false,
                             p,
-                        )
-                        .foreground(p.muted.native())
-                        .text_wrapping(TextWrapping::Wrap),
+                        ),
+                        NumberBox::new()
+                            .minimum(0.25)
+                            .maximum(2.0)
+                            .small_change(0.05)
+                            .value(self.options.speed)
+                            .is_enabled(enabled)
+                            .on_value_changed(context.callback(Message::Speed))
+                            .grid_column(1)
+                            .margin(Thickness::new(8.0, 0.0, 8.0, 0.0)),
+                        Border::new().grid_column(2).content(ui_button(
+                            context,
+                            "+",
+                            Message::Speed(Some(self.options.speed + 0.05)),
+                            enabled && self.options.speed < 2.0,
+                            false,
+                            p,
+                        )),
                     )),
                 label("整体移调", 13.0, p)
                     .grid_row(1)
