@@ -1,8 +1,11 @@
 //! Seekable WAV audio and cooperative AutoHotkey lifecycle. No input from tests.
+#[cfg(all(test, windows))]
+#[path = "playback/protocol_tests.rs"]
+mod protocol_tests;
 use crate::paths::{atomic_write, resource_root, unique_id};
 use anyhow::{Context, Result, bail, ensure};
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::{
     fs,
@@ -383,6 +386,15 @@ pub struct ScriptPlayer {
     pending: Option<(PathBuf, f64)>,
     last: GameStatus,
 }
+// Struct serialization also preserves compatibility with exported protocol-1
+// scripts whose parser requires id before action. New parsers accept any order.
+#[derive(Serialize)]
+struct ScriptCommand<'a> {
+    id: u64,
+    action: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    start_ms: Option<u64>,
+}
 impl ScriptPlayer {
     pub fn new(control_dir: PathBuf) -> Self {
         Self {
@@ -443,11 +455,21 @@ impl ScriptPlayer {
         let Some(dir) = &self.instance else {
             return Ok(());
         };
+        ensure!(["play", "stop"].contains(&action), "无效演奏命令");
+        ensure!(
+            start.is_none_or(|ms| ms <= 86_400_000),
+            "演奏起点超出有效范围"
+        );
+        ensure!(
+            self.command_id < 9_007_199_254_740_991,
+            "演奏命令编号已耗尽，请重新启动演奏器"
+        );
         let id = self.command_id + 1;
-        let mut payload = json!({"id":id,"action":action});
-        if let Some(ms) = start {
-            payload["start_ms"] = json!(ms);
-        }
+        let payload = ScriptCommand {
+            id,
+            action,
+            start_ms: start,
+        };
         atomic_write(&dir.join("command.json"), &serde_json::to_vec(&payload)?)?;
         self.command_id = id;
         if let Some(ms) = start {

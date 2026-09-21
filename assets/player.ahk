@@ -79,24 +79,63 @@ CheckControl() {
     if commandFile = "" || !FileExist(commandFile)
         return
     try {
-        if FileGetSize(commandFile) > 4096
+        ; Read one snapshot while allowing Rust's atomic file replacement.
+        input := FileOpen(commandFile, 0x700, "UTF-8") ; read + share read/write/delete
+        try {
+            if input.Length > 4096
+                return
+            command := input.Read()
+        } finally {
+            input.Close()
+        }
+        parsed := ParseCommand(command)
+        if !IsObject(parsed)
             return
-        command := FileRead(commandFile, "UTF-8")
-        ; Optional start_ms is an integer in the full event-table timeline.
-        if !RegExMatch(command, '^\s*\{\s*"id"\s*:\s*(\d+)\s*,\s*"action"\s*:\s*"(play|stop)"(?:\s*,\s*"start_ms"\s*:\s*(\d+))?\s*\}\s*$', &match)
-            return
-        requestId := Integer(match[1])
+        requestId := parsed["id"]
         if requestId <= lastCommandId
             return
         lastCommandId := requestId
-        if match[3] != ""
-            defaultStartMs := Integer(match[3])
-        if match[2] = "stop"
+        if parsed.Has("start_ms")
+            defaultStartMs := parsed["start_ms"]
+        if parsed["action"] = "stop"
             StopPlay("已从手机停止演奏。")
         else
             BeginPlay()
         PublishStatus()
     }
+}
+
+; Strict flat command schema, independent of JSON property order. Validate the
+; entire object before consuming its id; reject unknown/duplicate fields.
+ParseCommand(command) {
+    if !RegExMatch(command, '^\s*\{([^{}]*)\}\s*$', &envelope)
+        return false
+    fields := Map()
+    fields.CaseSense := "On"
+    for member in StrSplit(envelope[1], ",") {
+        if !RegExMatch(member, '^\s*"(id|action|start_ms)"\s*:\s*(.*?)\s*$', &pair)
+            return false
+        key := pair[1]
+        value := pair[2]
+        if fields.Has(key)
+            return false
+        if key = "action" {
+            if !RegExMatch(value, '^"(play|stop)"$', &action)
+                return false
+            fields[key] := action[1]
+        } else {
+            ; Bounds keep conversion exact and consistent with the Rust writer.
+            if !RegExMatch(value, '^(0|[1-9][0-9]*)$') || StrLen(value) > 16
+                return false
+            numericValue := Integer(value)
+            if key = "id" && (numericValue < 1 || numericValue > 9007199254740991)
+                return false
+            if key = "start_ms" && numericValue > 86400000
+                return false
+            fields[key] := numericValue
+        }
+    }
+    return fields.Has("id") && fields.Has("action") ? fields : false
 }
 
 JsonString(value) {
