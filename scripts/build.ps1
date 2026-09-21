@@ -1,6 +1,5 @@
 ﻿param([string]$Version='', [string]$DistPath='', [switch]$Console, [switch]$PromptVersion)
 trap {
-    Write-Progress -Id 70 -Activity '口琴工坊 · 生成便携版' -Completed
     if ($runLogs -and (Test-Path -LiteralPath $runLogs)) {
         $_ | Format-List * -Force | Out-String -Width 240 | Out-File -LiteralPath (Join-Path $runLogs 'failure.log') -Encoding UTF8
     }
@@ -14,6 +13,10 @@ $runLogs=New-RunLogDirectory 'build'
 $timer=[Diagnostics.Stopwatch]::StartNew()
 Write-Host "口琴工坊 · 生成便携版`n"
 Write-Host "详细日志：$runLogs`n"
+$manifestPath=Join-Path $ProjectRoot 'Cargo.toml'
+$currentVersion=Get-CargoPackageVersion $manifestPath
+$Version=$Version.Trim()
+if($PromptVersion -and -not $Version){$Version=Read-BuildVersion $currentVersion}
 Write-BuildStage 1 '检查环境与运行状态'
 if (-not $DistPath) { $DistPath=Join-Path $ProjectRoot 'app' }
 $DistPath=[IO.Path]::GetFullPath($DistPath).TrimEnd('\','/')
@@ -42,10 +45,6 @@ try {
     $transcribing=$true
     Push-Location $ProjectRoot
     $pushed=$true
-    $manifestPath=Join-Path $ProjectRoot 'Cargo.toml'
-    $currentVersion=Get-CargoPackageVersion $manifestPath
-    $Version=$Version.Trim()
-    if($PromptVersion -and -not $Version){$Version=Read-BuildVersion $currentVersion}
     if ($Version -and $Version -ne $currentVersion) {
         Assert-CargoPackageVersion $Version
         $packageVersion=$Version
@@ -116,6 +115,7 @@ if($buildFailure){
 }
 if($cleanupFailures.Count){throw ($cleanupFailures -join "`n")}
 Complete-BuildProgress
+Write-ConsoleProgress -Activity '打包完成' -PercentComplete 100
 $summary = @(
     ("打包完成，用时 {0:N1} 秒。" -f $timer.Elapsed.TotalSeconds),
     "版本号：$packageVersion",

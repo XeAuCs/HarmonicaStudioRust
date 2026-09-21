@@ -46,7 +46,7 @@ function Remove-FixtureLink([string]$Path){
 try {
     Run-Check '打包阶段进度单调递增且完成时收起' {
         $progressRecords=[Collections.Generic.List[object]]::new()
-        function Write-Progress { param($Id,$Activity,$Status,$PercentComplete,[switch]$Completed)
+        function Write-ConsoleProgress { param($Id,$Activity,$Status,$PercentComplete,[switch]$Completed)
             $progressRecords.Add([PSCustomObject]@{Id=$Id;Percent=$PercentComplete;Completed=$Completed.IsPresent})
         }
         foreach($stageNumber in 1..6){Write-BuildStage $stageNumber '阶段夹具'}
@@ -87,7 +87,7 @@ try {
         $log=Join-Path $root 'output.log'
         $arguments=@('中文 空格','quote"inside','C:\ending\','', 'a&b!')
         $progressRecords=[Collections.Generic.List[object]]::new()
-        function Write-Progress { param($Id,$Activity,$Status,$PercentComplete,[switch]$Completed)
+        function Write-ConsoleProgress { param($Id,$Activity,$Status,$PercentComplete,[switch]$Completed)
             $progressRecords.Add([PSCustomObject]@{Id=$Id;Percent=$PercentComplete;Completed=$Completed.IsPresent})
         }
         $leaked=@(Invoke-LoggedCommand -Executable $exe -Arguments $arguments -LogPath $log -Label '日志夹具')

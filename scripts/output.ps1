@@ -1,10 +1,21 @@
 ﻿# Console summaries and per-run diagnostic logs. Dot-source common.ps1 first.
+function Write-ConsoleProgress {
+    param($Id, [string]$Activity, [string]$Status, [int]$PercentComplete = -1, [switch]$Completed)
+    # Append-only output avoids Windows PowerShell 5.1 CJK cursor/width bugs.
+    if ($Completed) { return }
+    if ($PercentComplete -ge 0) {
+        $filled = [int][Math]::Floor($PercentComplete / 5)
+        Write-Host ('[{0}{1}] {2}%' -f ('#' * $filled), ('-' * (20 - $filled)), $PercentComplete)
+    } else {
+        Write-Host "  ${Activity}：$Status"
+    }
+}
 function Write-BuildStage([ValidateRange(1,6)][int]$Stage, [string]$Label) {
     Write-Host "[$Stage/6] $Label"
-    Write-Progress -Id 70 -Activity '口琴工坊 · 生成便携版' -Status "第 $Stage / 6 阶段：$Label" -PercentComplete ([int](100 * ($Stage - 1) / 6))
+    Write-ConsoleProgress -Id 70 -Activity '口琴工坊 · 生成便携版' -Status "第 $Stage / 6 阶段：$Label" -PercentComplete ([int](100 * ($Stage - 1) / 6))
 }
 function Complete-BuildProgress {
-    Write-Progress -Id 70 -Activity '口琴工坊 · 生成便携版' -Completed
+    Write-ConsoleProgress -Id 70 -Activity '口琴工坊 · 生成便携版' -Completed
 }
 function New-RunLogDirectory([string]$Name) {
     $root = Join-Path $ProjectRoot 'verification'
@@ -44,14 +55,18 @@ function Invoke-LoggedCommand(
         $outTask = $process.StandardOutput.BaseStream.CopyToAsync($stdout)
         $errTask = $process.StandardError.BaseStream.CopyToAsync($stderr)
         $commandTimer = [Diagnostics.Stopwatch]::StartNew()
+        $nextNotice = 0.0
         do {
-            Write-Progress -Id 71 -Activity $Label -Status ('正在运行 · 已用 {0:N0} 秒 · 详细内容写入日志' -f $commandTimer.Elapsed.TotalSeconds) -PercentComplete -1
+            if ($commandTimer.Elapsed.TotalSeconds -ge $nextNotice) {
+                Write-ConsoleProgress -Id 71 -Activity $Label -Status ('正在运行 · 已用 {0:N0} 秒 · 详细内容写入日志' -f $commandTimer.Elapsed.TotalSeconds) -PercentComplete -1
+                $nextNotice = $commandTimer.Elapsed.TotalSeconds + 10
+            }
         } while (-not $process.WaitForExit(500))
         $null = $outTask.GetAwaiter().GetResult()
         $null = $errTask.GetAwaiter().GetResult()
         $code = $process.ExitCode
     } finally {
-        Write-Progress -Id 71 -Activity $Label -Completed
+        Write-ConsoleProgress -Id 71 -Activity $Label -Completed
         if ($stdout) { $stdout.Dispose() }
         if ($stderr) { $stderr.Dispose() }
         $process.Dispose()
