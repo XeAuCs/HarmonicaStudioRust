@@ -172,6 +172,16 @@ pub fn note_weights(notes: &[Note]) -> Vec<f64> {
         .collect()
 }
 pub fn fit_phrases(notes: &[Note], base_shift: i32) -> (Vec<Note>, Vec<Value>) {
+    let (notes, adjustments) = fit_all_phrases(notes, base_shift);
+    (
+        notes
+            .into_iter()
+            .filter(|n| (MIN_PITCH..=MAX_PITCH).contains(&n.pitch))
+            .collect(),
+        adjustments,
+    )
+}
+fn fit_all_phrases(notes: &[Note], base_shift: i32) -> (Vec<Note>, Vec<Value>) {
     if notes.is_empty() {
         return (Vec::new(), Vec::new());
     }
@@ -255,15 +265,17 @@ pub fn fit_phrases(notes: &[Note], base_shift: i32) -> (Vec<Note>, Vec<Value>) {
     for (phrase, shift) in phrases.into_iter().zip(selected) {
         let mut kept: Vec<_> = phrase
             .iter()
-            .filter_map(|n| {
+            .map(|n| {
                 let pitch = n.pitch + base_shift + shift;
-                (MIN_PITCH..=MAX_PITCH)
-                    .contains(&pitch)
-                    .then(|| Note { pitch, ..n.clone() })
+                Note { pitch, ..n.clone() }
             })
             .collect();
-        if shift != 0 && !kept.is_empty() {
-            adjustments.push(json!({"start":phrase[0].start,"end":phrase.last().unwrap().end,"semitones":shift,"notes":kept.len()}));
+        let playable_count = kept
+            .iter()
+            .filter(|n| (MIN_PITCH..=MAX_PITCH).contains(&n.pitch))
+            .count();
+        if shift != 0 && playable_count > 0 {
+            adjustments.push(json!({"start":phrase[0].start,"end":phrase.last().unwrap().end,"semitones":shift,"notes":playable_count}));
         }
         result.append(&mut kept);
     }
@@ -326,23 +338,28 @@ pub fn fit_part(raw: &[Note], options: &Options) -> Result<(Vec<Note>, Value)> {
         })
         .unwrap();
     let shift = options.transpose + octave;
-    let mut playable: Vec<_> = notes
+    let mut fitted: Vec<_> = notes
         .iter()
-        .filter_map(|n| {
+        .map(|n| {
             let pitch = n.pitch + shift;
-            (MIN_PITCH..=MAX_PITCH)
-                .contains(&pitch)
-                .then(|| Note { pitch, ..n.clone() })
+            Note { pitch, ..n.clone() }
         })
         .collect();
     let mut adjustments = Vec::new();
-    if options.phrase_octave && playable.len() < notes.len() {
-        (playable, adjustments) = fit_phrases(&notes, shift);
+    if options.phrase_octave
+        && fitted
+            .iter()
+            .any(|n| !(MIN_PITCH..=MAX_PITCH).contains(&n.pitch))
+    {
+        (fitted, adjustments) = fit_all_phrases(&notes, shift);
     }
-    for n in &mut playable {
+    for n in &mut fitted {
         n.start /= options.speed;
         n.end /= options.speed;
     }
+    let (playable, out_of_range): (Vec<_>, Vec<_>) = fitted
+        .into_iter()
+        .partition(|n| (MIN_PITCH..=MAX_PITCH).contains(&n.pitch));
     for a in &mut adjustments {
         a["start"] = json!(a["start"].as_f64().unwrap() / options.speed);
         a["end"] = json!(a["end"].as_f64().unwrap() / options.speed);
@@ -351,6 +368,6 @@ pub fn fit_part(raw: &[Note], options: &Options) -> Result<(Vec<Note>, Value)> {
         .iter()
         .map(|a| a["notes"].as_u64().unwrap_or(0) as usize)
         .sum();
-    let report = json!({"source_notes":raw.len(),"extracted_notes":notes.len(),"range_retention":playable.len() as f64 / notes.len() as f64,"source_retention":playable.len() as f64 / raw.len() as f64,"melody_notes":playable.len(),"removed_polyphony":raw.len()-notes.len(),"dropped_out_of_range":notes.len()-playable.len(),"transpose_semitones":shift,"speed":options.speed,"octave_adjustments":adjustments,"phrase_adjusted_notes":adjusted,"melody_mode":options.melody_mode});
+    let report = json!({"source_notes":raw.len(),"extracted_notes":notes.len(),"range_retention":playable.len() as f64 / notes.len() as f64,"source_retention":playable.len() as f64 / raw.len() as f64,"melody_notes":playable.len(),"removed_polyphony":raw.len()-notes.len(),"dropped_out_of_range":notes.len()-playable.len(),"out_of_range_notes":out_of_range,"transpose_semitones":shift,"speed":options.speed,"octave_adjustments":adjustments,"phrase_adjusted_notes":adjusted,"melody_mode":options.melody_mode});
     Ok((playable, report))
 }

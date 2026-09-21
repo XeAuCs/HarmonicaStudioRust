@@ -6,16 +6,27 @@ pub const MAX_NOTES: usize = 100_000;
 pub const MAX_SECONDS: f64 = 1200.0;
 pub const TIME_EPSILON: f64 = 1e-8;
 pub const DEFAULT_VELOCITY: i32 = 80;
+pub const MIN_EDITOR_PITCH: i32 = -256;
+pub const MAX_EDITOR_PITCH: i32 = 383;
 
 pub fn normalize_score_notes(notes: &[Note]) -> Result<Vec<Note>> {
+    normalize_notes(notes, MIN_PITCH, MAX_PITCH)
+}
+
+/// Same timing, velocity and monophony rules, including editable range hints.
+pub fn normalize_editor_notes(notes: &[Note]) -> Result<Vec<Note>> {
+    normalize_notes(notes, MIN_EDITOR_PITCH, MAX_EDITOR_PITCH)
+}
+
+fn normalize_notes(notes: &[Note], min_pitch: i32, max_pitch: i32) -> Result<Vec<Note>> {
     if notes.len() > MAX_NOTES {
         bail!("工程音符列表无效，最多支持 {MAX_NOTES} 个音符。");
     }
     let mut result = notes.to_vec();
     for (index, note) in result.iter().enumerate() {
         let index = index + 1;
-        if !(MIN_PITCH..=MAX_PITCH).contains(&note.pitch) {
-            bail!("第 {index} 个音符超出口琴音域（{MIN_PITCH} 至 {MAX_PITCH}）。");
+        if !(min_pitch..=max_pitch).contains(&note.pitch) {
+            bail!("第 {index} 个音符超出允许音域（{min_pitch} 至 {max_pitch}）。");
         }
         if !(1..=127).contains(&note.velocity) {
             bail!("第 {index} 个音符力度须为 1 至 127。");

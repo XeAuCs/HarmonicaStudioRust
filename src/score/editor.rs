@@ -1,6 +1,8 @@
 //! Pure piano-roll interaction model. All committed notes use the shared score validator.
 use crate::models::Note;
-use crate::notes::{MAX_PITCH, MAX_SECONDS, MIN_PITCH, normalize_score_notes};
+use crate::notes::{
+    MAX_EDITOR_PITCH, MAX_PITCH, MAX_SECONDS, MIN_EDITOR_PITCH, MIN_PITCH, normalize_editor_notes,
+};
 use anyhow::{Result, bail};
 
 pub const LABEL_WIDTH: f64 = 136.0;
@@ -28,6 +30,7 @@ struct PitchView {
 #[derive(Clone, Debug)]
 struct History {
     notes: Vec<Note>,
+    out_of_range_notes: Vec<Note>,
     selected: Option<usize>,
 }
 #[derive(Clone, Debug)]
@@ -58,6 +61,8 @@ pub struct Interaction {
 #[derive(Clone, Debug)]
 pub struct EditorModel {
     pub notes: Vec<Note>,
+    /// Editable hollow notes, excluded from playback until moved into range.
+    pub out_of_range_notes: Vec<Note>,
     pub selected: Option<usize>,
     pub zoom: f64,
     /// Timeline offset in seconds. Half a viewport of negative padding is valid.
@@ -86,6 +91,7 @@ impl Default for EditorModel {
     fn default() -> Self {
         Self {
             notes: Vec::new(),
+            out_of_range_notes: Vec::new(),
             selected: None,
             zoom: DEFAULT_TIME_ZOOM,
             offset: 0.0,
@@ -111,7 +117,44 @@ impl Default for EditorModel {
     }
 }
 impl EditorModel {
+    /// Selection indices address solid notes first, then hollow notes.
+    pub fn editable_notes(&self) -> Vec<Note> {
+        self.notes
+            .iter()
+            .chain(&self.out_of_range_notes)
+            .cloned()
+            .collect()
+    }
+    fn note_at(&self, index: usize) -> &Note {
+        if index < self.notes.len() {
+            &self.notes[index]
+        } else {
+            &self.out_of_range_notes[index - self.notes.len()]
+        }
+    }
+    fn assign_notes(&mut self, notes: Vec<Note>, selected: Option<Note>) {
+        (self.notes, self.out_of_range_notes) = notes
+            .into_iter()
+            .partition(|n| (MIN_PITCH..=MAX_PITCH).contains(&n.pitch));
+        self.selected = selected.and_then(|target| {
+            self.notes
+                .iter()
+                .chain(&self.out_of_range_notes)
+                .position(|n| *n == target)
+        });
+        // Preserve the viewport during edits while allowing newly moved notes
+        // to be reached by scrolling. Document changes reset these bounds.
+        let old_high = self.high_pitch;
+        for n in &self.out_of_range_notes {
+            self.low_pitch = self.low_pitch.min(n.pitch);
+            self.high_pitch = self.high_pitch.max(n.pitch);
+        }
+        self.pitch_offset += f64::from(self.high_pitch - old_high) * self.row_height();
+    }
     pub fn set_document(&mut self, notes: &[Note], highlight: Option<f64>) {
+        self.out_of_range_notes.clear();
+        self.low_pitch = MIN_PITCH;
+        self.high_pitch = MAX_PITCH;
         self.notes = notes.to_vec();
         self.highlight = highlight;
         self.selected = None;
@@ -136,7 +179,58 @@ impl EditorModel {
         self.clamp_pitch_offset();
     }
     pub fn duration(&self) -> f64 {
-        self.notes.last().map_or(0.0, |n| n.end)
+        self.notes
+            .iter()
+            .chain(&self.out_of_range_notes)
+            .map(|n| n.end)
+            .fold(0.0, f64::max)
+    }
+    pub fn set_range_hints(&mut self, report: Option<&serde_json::Value>) {
+        self.out_of_range_notes = Self::read_range_hints(report);
+        self.low_pitch = self
+            .out_of_range_notes
+            .iter()
+            .map(|n| n.pitch)
+            .min()
+            .unwrap_or(MIN_PITCH)
+            .min(MIN_PITCH);
+        self.high_pitch = self
+            .out_of_range_notes
+            .iter()
+            .map(|n| n.pitch)
+            .max()
+            .unwrap_or(MAX_PITCH)
+            .max(MAX_PITCH);
+        if self.fit_pitch_mode {
+            self.fit_pitches();
+        } else {
+            self.center_pitches();
+        }
+    }
+    pub fn sync_range_hints(&mut self, report: Option<&serde_json::Value>) {
+        let hints = Self::read_range_hints(report);
+        if hints != self.out_of_range_notes {
+            self.assign_notes(self.notes.iter().chain(&hints).cloned().collect(), None);
+        }
+    }
+    fn read_range_hints(report: Option<&serde_json::Value>) -> Vec<Note> {
+        let mut hints = report
+            .and_then(|r| r.get("out_of_range_notes"))
+            .and_then(|v| serde_json::from_value::<Vec<Note>>(v.clone()).ok())
+            .unwrap_or_default();
+        hints.truncate(crate::notes::MAX_NOTES);
+        hints.retain(|n| {
+            (MIN_EDITOR_PITCH..=MAX_EDITOR_PITCH).contains(&n.pitch)
+                && !(MIN_PITCH..=MAX_PITCH).contains(&n.pitch)
+                && n.start.is_finite()
+                && n.end.is_finite()
+                && n.start >= 0.0
+                && n.end > n.start
+                && n.end <= MAX_SECONDS
+                && (1..=127).contains(&n.velocity)
+        });
+        hints.sort_by(|a, b| a.start.total_cmp(&b.start));
+        hints
     }
     pub fn row_height(&self) -> f64 {
         self.pitch_row
@@ -280,9 +374,11 @@ impl EditorModel {
     pub fn fit_pitches(&mut self) {
         self.cancel_drag();
         self.fit_pitch_mode = true;
+        // Only playable (solid) notes determine fitting. Hints merely extend
+        // the scrollable range, so an extreme lost note cannot shrink the score.
         let low = self.notes.iter().map(|n| n.pitch).min().unwrap_or(60);
         let high = self.notes.iter().map(|n| n.pitch).max().unwrap_or(71);
-        let count = (high + 1).min(self.high_pitch) - (low - 1).max(self.low_pitch) + 1;
+        let count = (high + 1).min(MAX_PITCH) - (low - 1).max(MIN_PITCH) + 1;
         let available = (self.height - RULER_HEIGHT - 2.0).max(1.0);
         self.pitch_row = (available / f64::from(count.max(1)))
             .floor()
@@ -457,6 +553,16 @@ impl EditorModel {
                 return Some(index);
             }
         }
+        for (index, note) in self.out_of_range_notes.iter().enumerate() {
+            let (left, top, width, height) = self.note_rect(note);
+            if x >= left - 1.0
+                && x <= left + width + 1.0
+                && y >= top - 2.0
+                && y <= top + height + 2.0
+            {
+                return Some(self.notes.len() + index);
+            }
+        }
         None
     }
     pub fn is_dragging(&self) -> bool {
@@ -464,7 +570,7 @@ impl EditorModel {
     }
     pub fn begin_pointer(&mut self, x: f64, y: f64, force_pan: bool) {
         if self.read_only
-            || self.notes.is_empty()
+            || (self.notes.is_empty() && self.out_of_range_notes.is_empty())
             || x < self.left()
             || x > self.width
             || y < 0.0
@@ -475,7 +581,7 @@ impl EditorModel {
         if !force_pan && !self.compact && self.allow_note_edits {
             if let Some(index) = self.hit_test(x, y) {
                 self.selected = Some(index);
-                let (left, _, width, _) = self.note_rect(&self.notes[index]);
+                let (left, _, width, _) = self.note_rect(self.note_at(index));
                 let resize = left + width - x <= 7.0f64.min(width * 0.3);
                 self.centered_position = false;
                 self.drag = Some(Drag::Note {
@@ -538,7 +644,11 @@ impl EditorModel {
                 time_offset,
                 pitch_offset,
             } => {
-                let original = &before.notes[index];
+                let original = if index < before.notes.len() {
+                    &before.notes[index]
+                } else {
+                    &before.out_of_range_notes[index - before.notes.len()]
+                };
                 let dx = x - start_x + (self.offset - time_offset) * self.zoom;
                 let dy = y - start_y + self.pitch_offset - pitch_offset;
                 let delta = (dx / self.zoom / SNAP).round_ties_even() * SNAP;
@@ -554,10 +664,15 @@ impl EditorModel {
                     }
                     changed.pitch = (original.pitch
                         - (dy / self.row_height()).round_ties_even() as i32)
-                        .clamp(MIN_PITCH, MAX_PITCH);
+                        .clamp(MIN_EDITOR_PITCH, MAX_EDITOR_PITCH);
                 }
                 self.notes = before.notes.clone();
-                self.notes[index] = changed;
+                self.out_of_range_notes = before.out_of_range_notes.clone();
+                if index < self.notes.len() {
+                    self.notes[index] = changed;
+                } else {
+                    self.out_of_range_notes[index - self.notes.len()] = changed;
+                }
                 Interaction::default()
             }
         }
@@ -585,16 +700,15 @@ impl EditorModel {
                 })
             }
             Drag::Note { before, index, .. } => {
-                if self.notes == before.notes {
+                if self.notes == before.notes
+                    && self.out_of_range_notes == before.out_of_range_notes
+                {
                     return Ok(Interaction::default());
                 }
-                match normalize_score_notes(&self.notes) {
+                let chosen = self.note_at(index).clone();
+                match normalize_editor_notes(&self.editable_notes()) {
                     Ok(notes) => {
-                        let Some(chosen) = self.notes.get(index).cloned() else {
-                            bail!("拖动目标已失效，请重新选择音符。");
-                        };
-                        self.notes = notes;
-                        self.selected = self.notes.iter().position(|n| *n == chosen);
+                        self.assign_notes(notes, Some(chosen));
                         self.push_history(before);
                         Ok(Interaction {
                             changed: true,
@@ -617,12 +731,27 @@ impl EditorModel {
     fn snapshot(&self) -> History {
         History {
             notes: self.notes.clone(),
+            out_of_range_notes: self.out_of_range_notes.clone(),
             selected: self.selected,
         }
     }
     fn restore(&mut self, history: History) {
-        self.notes = history.notes;
-        self.selected = history.selected;
+        let selected = history.selected.and_then(|i| {
+            history
+                .notes
+                .iter()
+                .chain(&history.out_of_range_notes)
+                .nth(i)
+                .cloned()
+        });
+        self.assign_notes(
+            history
+                .notes
+                .into_iter()
+                .chain(history.out_of_range_notes)
+                .collect(),
+            selected,
+        );
     }
     fn push_history(&mut self, previous: History) {
         self.undo.push(previous);
@@ -635,13 +764,14 @@ impl EditorModel {
         if self.read_only || !self.allow_note_edits || self.compact {
             bail!("当前曲谱处于只读状态。");
         }
-        let normalized = normalize_score_notes(&notes)?;
-        if normalized == self.notes {
+        let normalized = normalize_editor_notes(&notes)?;
+        let mut current = self.editable_notes();
+        current.sort_by(|a, b| a.start.total_cmp(&b.start).then(a.pitch.cmp(&b.pitch)));
+        if normalized == current {
             return Ok(false);
         }
         let previous = self.snapshot();
-        self.notes = normalized;
-        self.selected = selected.and_then(|target| self.notes.iter().position(|n| *n == target));
+        self.assign_notes(normalized, selected);
         self.push_history(previous);
         Ok(true)
     }
@@ -672,7 +802,7 @@ impl EditorModel {
             end: (start + 0.4).min(next).min(MAX_SECONDS),
             velocity: 80,
         };
-        let mut notes = self.notes.clone();
+        let mut notes = self.editable_notes();
         notes.push(note.clone());
         self.commit(notes, Some(note))
     }
@@ -684,7 +814,7 @@ impl EditorModel {
         let Some(index) = self.selected else {
             return Ok(false);
         };
-        let mut notes = self.notes.clone();
+        let mut notes = self.editable_notes();
         notes.remove(index);
         self.commit(notes, None)
     }
@@ -696,7 +826,7 @@ impl EditorModel {
         let Some(index) = self.selected else {
             return Ok(false);
         };
-        let mut notes = self.notes.clone();
+        let mut notes = self.editable_notes();
         let n = &mut notes[index];
         n.start += time;
         n.end += time + length;

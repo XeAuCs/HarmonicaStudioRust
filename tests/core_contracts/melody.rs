@@ -1,6 +1,100 @@
 use super::support::*;
 
 #[test]
+fn out_of_range_hints_preserve_fitted_time_and_stay_out_of_score() {
+    let raw = vec![
+        note(47, 0.0, 0.8),
+        note(48, 1.0, 1.8),
+        note(85, 2.0, 2.8),
+        note(86, 3.0, 3.8),
+    ];
+    let options = Options {
+        auto_octave: false,
+        phrase_octave: false,
+        trim_silence: false,
+        speed: 2.0,
+        ..Options::default()
+    };
+    let (notes, report) = harmonica_studio::melody::fit_part(&raw, &options).unwrap();
+    assert_eq!(notes.iter().map(|n| n.pitch).collect::<Vec<_>>(), [48, 85]);
+    let hints: Vec<Note> = serde_json::from_value(report["out_of_range_notes"].clone()).unwrap();
+    assert_eq!(hints, [note(47, 0.0, 0.4), note(86, 1.5, 1.9)]);
+    let mut project = harmonica_studio::project::make_project(notes.clone(), "音域提示").unwrap();
+    project.report = Some(report);
+    let temp = tempfile::tempdir().unwrap();
+    let file = temp.path().join("range.hstudio");
+    harmonica_studio::project::save_project(&file, &project).unwrap();
+    let loaded = harmonica_studio::project::load_project(&file).unwrap();
+    assert_eq!(loaded, project);
+    let mut editor = harmonica_studio::editor::EditorModel::default();
+    editor.set_document(&loaded.notes, None);
+    editor.set_range_hints(loaded.report.as_ref());
+    editor.fit_pitches();
+    assert_eq!(editor.notes, notes);
+    assert_eq!(editor.out_of_range_notes, hints);
+    assert_eq!((editor.low_pitch, editor.high_pitch), (47, 86));
+    assert_eq!(
+        editor.hit_test(editor.x_at(0.2), editor.pitch_center(47)),
+        Some(notes.len())
+    );
+    editor.set_document(&notes, None);
+    assert!(editor.out_of_range_notes.is_empty());
+    assert_eq!((editor.low_pitch, editor.high_pitch), (48, 85));
+}
+
+#[test]
+fn fitting_ignores_hollow_hints_in_full_and_compact_views() {
+    use harmonica_studio::editor::EditorModel;
+    let notes = vec![note(60, 0.0, 0.4), note(72, 1.0, 1.4)];
+    let mut baseline = EditorModel::default();
+    baseline.set_document(&notes, None);
+    baseline.fit_pitches();
+    let mut hinted = EditorModel::default();
+    hinted.set_document(&notes, None);
+    hinted.set_range_hints(Some(&serde_json::json!({
+        "out_of_range_notes": [note(12, 2.0, 2.4), note(120, 3.0, 3.4)]
+    })));
+    hinted.fit_pitches();
+    for compact in [false, true, false] {
+        baseline.set_compact(compact);
+        hinted.set_compact(compact);
+        assert_eq!(hinted.row_height(), baseline.row_height());
+        for pitch in [60, 72] {
+            assert!((hinted.pitch_center(pitch) - baseline.pitch_center(pitch)).abs() < 1e-8);
+        }
+    }
+    assert_eq!((hinted.low_pitch, hinted.high_pitch), (12, 120));
+}
+
+#[test]
+fn phrase_fitting_hints_use_the_final_octave_once() {
+    let raw = vec![note(20, 0.0, 0.4), note(60, 0.5, 0.9), note(110, 1.0, 1.4)];
+    let options = Options {
+        auto_octave: false,
+        phrase_octave: true,
+        trim_silence: false,
+        ..Options::default()
+    };
+    let (notes, report) = harmonica_studio::melody::fit_part(&raw, &options).unwrap();
+    let (expected, _) = harmonica_studio::melody::fit_phrases(&raw, 0);
+    assert_eq!(notes, expected);
+    let hints: Vec<Note> = serde_json::from_value(report["out_of_range_notes"].clone()).unwrap();
+    assert_eq!(notes.len() + hints.len(), raw.len());
+    assert!(hints.iter().all(|n| !(48..=85).contains(&n.pitch)));
+    let mut all = notes;
+    all.extend(hints);
+    all.sort_by(|a, b| a.start.total_cmp(&b.start));
+    let shift = all[0].pitch - raw[0].pitch;
+    assert!(
+        all.iter()
+            .zip(&raw)
+            .all(|(fitted, original)| fitted.pitch - original.pitch == shift
+                && fitted.start == original.start
+                && fitted.end == original.end)
+    );
+}
+
+#[test]
 fn recommendation_prefers_sustained_melody_over_fragments_bass_and_repetition() {
     let melody: Vec<_> = (0..64)
         .map(|i| {

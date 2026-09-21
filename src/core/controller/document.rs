@@ -114,6 +114,18 @@ impl AppController {
         Ok(())
     }
     pub fn set_notes(&mut self, notes: Vec<Note>) -> Result<()> {
+        self.set_note_content(notes, None)
+    }
+    /// Atomically update playable notes and editable hollow notes. Neither UI
+    /// nor playback needs to reinterpret extraction history or octave shifts.
+    pub fn set_editor_notes(&mut self, notes: Vec<Note>) -> Result<()> {
+        let normalized = crate::notes::normalize_editor_notes(&notes)?;
+        let (playable, hollow): (Vec<_>, Vec<_>) = normalized
+            .into_iter()
+            .partition(|n| (crate::notes::MIN_PITCH..=crate::notes::MAX_PITCH).contains(&n.pitch));
+        self.set_note_content(playable, Some(hollow))
+    }
+    fn set_note_content(&mut self, notes: Vec<Note>, hollow: Option<Vec<Note>>) -> Result<()> {
         self.idle()?;
         ensure!(
             self.state.transport != Transport::Playing,
@@ -121,6 +133,11 @@ impl AppController {
         );
         let mut project = self.state.project.clone().context("请先打开或创建工程")?;
         project.notes = notes;
+        if let Some(hollow) = hollow {
+            let report = project.report.get_or_insert_with(|| json!({}));
+            report["dropped_out_of_range"] = json!(hollow.len());
+            report["out_of_range_notes"] = json!(hollow);
+        }
         if project
             .highlight
             .is_some_and(|h| !project.notes.iter().any(|n| n.end > h))

@@ -34,7 +34,11 @@ impl Studio {
                     s += &format!("  /  提取时按句调整 {adjusted} 音");
                 }
                 if dropped > 0 {
-                    s += &format!("  /  超音域丢弃 {dropped} 音");
+                    s += &if report.get("out_of_range_notes").is_some() {
+                        format!("  /  超音域 {dropped} 音")
+                    } else {
+                        format!("  /  超音域丢弃 {dropped} 音（重新提取可显示）")
+                    };
                 }
             }
             if c.state().export_dirty() {

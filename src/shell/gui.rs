@@ -176,8 +176,8 @@ impl Studio {
     fn apply_edit(&mut self, result: Result<bool>) {
         match result {
             Ok(true) => {
-                let notes = self.editor.borrow().notes.clone();
-                self.perform(|c| c.set_notes(notes));
+                let notes = self.editor.borrow().editable_notes();
+                self.perform(|c| c.set_editor_notes(notes));
             }
             Ok(false) => {}
             Err(e) => self.error = e.to_string(),
@@ -229,6 +229,7 @@ impl Studio {
             if self.seen_document != c.state().document_id {
                 if let Some(p) = &c.state().project {
                     e.set_document(&p.notes, p.highlight);
+                    e.set_range_hints(p.report.as_ref());
                 } else {
                     e.set_document(&[], None);
                 }
@@ -248,6 +249,7 @@ impl Studio {
             } else if self.seen_revision != c.state().revision && !e.is_dragging() {
                 if let Some(p) = &c.state().project {
                     e.sync_notes(&p.notes, p.highlight);
+                    e.sync_range_hints(p.report.as_ref());
                 }
                 self.seen_revision = c.state().revision;
             }

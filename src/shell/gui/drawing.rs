@@ -67,10 +67,9 @@ pub(super) fn draw_score(
             0.65,
         );
     }
-    let first = e.notes.partition_point(|n| n.end < e.offset);
-    for (i, note) in e.notes.iter().enumerate().skip(first) {
-        if note.start > e.offset + e.visible_seconds() {
-            break;
+    for (i, note) in e.notes.iter().chain(&e.out_of_range_notes).enumerate() {
+        if note.start > e.offset + e.visible_seconds() || note.end < e.offset {
+            continue;
         }
         let (raw_x, raw_y, w, h) = e.note_rect(note);
         let true_width = (note.end - note.start) * e.zoom;
@@ -84,14 +83,23 @@ pub(super) fn draw_score(
         }
         let rect = CanvasRect::new(x, y, right, bottom);
         let chosen = e.selected == Some(i) && !e.compact;
-        ctx.fill_rounded_rect(
-            &RoundedRect::new(rect, 0.8, 0.8),
-            if chosen { &selected } else { &accent },
-        );
+        let playable = (crate::notes::MIN_PITCH..=crate::notes::MAX_PITCH).contains(&note.pitch);
+        if playable {
+            ctx.fill_rounded_rect(
+                &RoundedRect::new(rect, 0.8, 0.8),
+                if chosen { &selected } else { &accent },
+            );
+        }
         ctx.draw_rounded_rect(
             &RoundedRect::new(rect, 0.8, 0.8),
             if chosen { &ink } else { &accent },
-            if chosen { 1.2 } else { 0.7 },
+            if chosen {
+                1.2
+            } else if playable {
+                0.7
+            } else {
+                1.0
+            },
         );
         if !e.compact
             && w > key_label(note.pitch).chars().count() as f64 * 11.0 + 8.0

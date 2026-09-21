@@ -185,3 +185,94 @@ fn readonly_prevents_edit_and_history_mutations() {
     e.begin_pointer(80.0, 50.0, false);
     assert!(!e.is_dragging());
 }
+
+fn hollow_editor() -> EditorModel {
+    let mut e = EditorModel::default();
+    e.set_document(&[note(60, 1.0, 1.5)], None);
+    e.set_range_hints(Some(
+        &serde_json::json!({"out_of_range_notes": [note(47, 0.0, 0.5)]}),
+    ));
+    e.set_pitch_zoom(10.0);
+    e.set_pitch_scroll_fraction(1.0);
+    e
+}
+fn select_hollow(e: &mut EditorModel) -> (f64, f64) {
+    let x = e.x_at(0.2);
+    let y = e.pitch_center(47);
+    assert_eq!(e.hit_test(x, y), Some(e.notes.len()));
+    e.begin_pointer(x, y, false);
+    (x, y)
+}
+#[test]
+fn hollow_drag_moves_time_and_pitch_without_snapping_into_range() {
+    let mut e = hollow_editor();
+    let (x, y) = select_hollow(&mut e);
+    e.move_pointer(x + e.zoom * 0.2, y);
+    assert!(e.end_pointer(x).unwrap().changed);
+    assert_eq!(e.out_of_range_notes, [note(47, 0.2, 0.7)]);
+    assert_eq!(e.notes, [note(60, 1.0, 1.5)]);
+    assert!(e.undo());
+    assert_eq!(e.out_of_range_notes, [note(47, 0.0, 0.5)]);
+    assert!(e.redo());
+    assert_eq!(e.out_of_range_notes, [note(47, 0.2, 0.7)]);
+}
+#[test]
+fn hollow_crossing_boundary_becomes_playable_and_undo_restores_hollow() {
+    let mut e = hollow_editor();
+    let (x, y) = select_hollow(&mut e);
+    e.move_pointer(x, y - e.row_height());
+    assert!(e.end_pointer(x).unwrap().changed);
+    assert_eq!(e.notes, [note(48, 0.0, 0.5), note(60, 1.0, 1.5)]);
+    assert!(e.out_of_range_notes.is_empty());
+    assert_eq!(e.selected, Some(0));
+    assert!(e.undo());
+    assert_eq!(e.selected, Some(1));
+    assert_eq!(e.out_of_range_notes, [note(47, 0.0, 0.5)]);
+    assert!(e.redo());
+    e.nudge(0.0, -1, 0.0).unwrap();
+    assert_eq!(e.out_of_range_notes, [note(47, 0.0, 0.5)]);
+}
+#[test]
+fn hollow_delete_during_drag_is_undoable_and_release_cannot_resurrect_it() {
+    let mut e = hollow_editor();
+    let (x, y) = select_hollow(&mut e);
+    e.move_pointer(x + 7.0, y);
+    assert!(e.delete_selected().unwrap());
+    assert!(!e.end_pointer(x).unwrap().changed);
+    assert!(e.out_of_range_notes.is_empty());
+    assert_eq!(e.notes, [note(60, 1.0, 1.5)]);
+    assert!(e.undo());
+    assert_eq!(e.out_of_range_notes, [note(47, 0.0, 0.5)]);
+    assert!(!e.can_undo());
+    assert!(e.redo());
+    assert!(e.out_of_range_notes.is_empty());
+}
+#[test]
+fn hollow_invalid_drag_and_cancel_preserve_both_lists() {
+    let mut e = hollow_editor();
+    let (x, y) = select_hollow(&mut e);
+    e.move_pointer(x + e.zoom, y - e.row_height());
+    assert!(e.end_pointer(x).is_err());
+    assert_eq!(e.out_of_range_notes, [note(47, 0.0, 0.5)]);
+    assert_eq!(e.notes, [note(60, 1.0, 1.5)]);
+    assert!(!e.can_undo());
+    let (x, y) = select_hollow(&mut e);
+    e.move_pointer(x, y - e.row_height());
+    e.cancel_drag();
+    assert_eq!(e.out_of_range_notes, [note(47, 0.0, 0.5)]);
+}
+#[test]
+fn hollow_only_document_supports_editing_and_readonly_guard() {
+    let mut e = hollow_editor();
+    e.notes.clear();
+    let (x, _) = select_hollow(&mut e);
+    e.end_pointer(x).unwrap();
+    e.allow_note_edits = false;
+    assert!(e.delete_selected().is_err());
+    assert!(e.nudge(0.0, 1, 0.0).is_err());
+    e.allow_note_edits = true;
+    assert!(e.delete_selected().unwrap());
+    assert!(e.undo());
+    e.nudge(0.0, 1, 0.0).unwrap();
+    assert_eq!(e.notes, [note(48, 0.0, 0.5)]);
+}

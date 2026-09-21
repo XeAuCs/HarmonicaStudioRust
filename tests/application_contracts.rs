@@ -596,3 +596,53 @@ fn preview_position_label_tracks_transport_changes() {
     assert_eq!(c.state().transport, Transport::Ended);
     assert_eq!(c.state().position_label, "试听结束");
 }
+
+#[test]
+fn hollow_edits_save_atomically_and_stay_out_of_playable_notes() {
+    let root = tempfile::tempdir().unwrap();
+    let mut c = controller(root.path());
+    let solid = project(60).notes[0].clone();
+    let hollow = Note {
+        pitch: 47,
+        start: 1.0,
+        end: 1.5,
+        velocity: 80,
+    };
+    c.set_editor_notes(vec![solid.clone(), hollow.clone()])
+        .unwrap();
+    drain(&mut c);
+    let saved = load_project(&root.path().join("data/autosave.hstudio")).unwrap();
+    assert_eq!(saved.notes, [solid.clone()]);
+    assert_eq!(
+        saved.report.as_ref().unwrap()["out_of_range_notes"],
+        json!([hollow.clone()])
+    );
+    assert_eq!(saved.report.as_ref().unwrap()["dropped_out_of_range"], 1);
+    let before = c.state().project.clone();
+    let invalid = Note {
+        start: 0.0,
+        ..hollow.clone()
+    };
+    assert!(c.set_editor_notes(vec![solid.clone(), invalid]).is_err());
+    assert_eq!(c.state().project, before);
+    let recovered = Note {
+        pitch: 48,
+        ..hollow
+    };
+    c.set_editor_notes(vec![solid.clone(), recovered.clone()])
+        .unwrap();
+    drain(&mut c);
+    assert_eq!(
+        c.state().project.as_ref().unwrap().notes,
+        [solid.clone(), recovered]
+    );
+    assert_eq!(
+        c.state().project.as_ref().unwrap().report.as_ref().unwrap()["dropped_out_of_range"],
+        0
+    );
+    c.set_editor_notes(vec![solid.clone()]).unwrap();
+    drain(&mut c);
+    let saved = load_project(&root.path().join("data/autosave.hstudio")).unwrap();
+    assert_eq!(saved.notes, [solid]);
+    assert_eq!(saved.report.unwrap()["out_of_range_notes"], json!([]));
+}

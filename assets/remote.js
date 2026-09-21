@@ -53,6 +53,8 @@
   let scoreNeeded = false;
   let scorePaintKey = "";
   let scoreSize = { width: 0, height: 0, ratio: 1 };
+  let scoreResizeFrame = null;
+  let pixelRatioQuery = null;
   const scoreContext = dom.scoreCanvas.getContext("2d");
   const scorePalette = { line: "#CFC8BB", accent: "#9F4937", muted: "#6E695F" };
   const appliedPalette = {};
@@ -395,8 +397,8 @@
 
   function resizeScore() {
     const bounds = dom.scoreCanvas.getBoundingClientRect();
-    // The small preview does not need a 3x/4x backing store on high-DPI phones.
-    const ratio = Math.min(2, Math.max(1, window.devicePixelRatio || 1));
+    // Keep the full device resolution, including 3x/4x phones and browser zoom.
+    const ratio = Math.max(1, window.devicePixelRatio || 1);
     const width = bounds.width;
     const height = bounds.height;
     if (width <= 0 || height <= 0) return;
@@ -409,6 +411,30 @@
     paintProgress();
   }
 
+  function queueScoreResize() {
+    if (document.hidden || scoreResizeFrame !== null) return;
+    scoreResizeFrame = requestAnimationFrame(() => {
+      scoreResizeFrame = null;
+      resizeScore();
+    });
+  }
+
+  function cancelScoreResize() {
+    cancelAnimationFrame(scoreResizeFrame);
+    scoreResizeFrame = null;
+  }
+
+  function watchPixelRatio() {
+    pixelRatioQuery?.removeEventListener("change", onPixelRatioChange);
+    pixelRatioQuery = window.matchMedia(`(resolution: ${window.devicePixelRatio || 1}dppx)`);
+    pixelRatioQuery.addEventListener("change", onPixelRatioChange);
+  }
+
+  function onPixelRatioChange() {
+    watchPixelRatio();
+    queueScoreResize();
+  }
+
   function paintScore(position) {
     if (!scoreContext || scoreSize.width <= 0) return;
     const key = `${position}:${scoreGeneration}:${Boolean(score)}`;
@@ -417,7 +443,7 @@
     const ctx = scoreContext;
     const { width, height } = scoreSize;
     const top = 8;
-    const bottom = height - 21;
+    const bottom = height - 26;
     const center = width / 2;
     const pixelsPerSecond = width / 8;
     const windowStart = position - 4;
@@ -425,25 +451,31 @@
     const low = score?.low ?? 58;
     const high = score?.high ?? 74;
     const pitchY = (pitch) => top + (high - pitch) / (high - low) * (bottom - top);
-    ctx.setTransform(dom.scoreCanvas.width / width, 0, 0, dom.scoreCanvas.height / height, 0, 0);
+    const scaleX = dom.scoreCanvas.width / width;
+    const scaleY = dom.scoreCanvas.height / height;
+    // Align strokes to physical pixel centers instead of blurring across pixels.
+    const snapX = (x) => (Math.round(x * scaleX - Math.round(scaleX) / 2) + Math.round(scaleX) / 2) / scaleX;
+    const snapY = (y) => (Math.round(y * scaleY - Math.round(scaleY) / 2) + Math.round(scaleY) / 2) / scaleY;
+    ctx.setTransform(scaleX, 0, 0, scaleY, 0, 0);
     ctx.clearRect(0, 0, width, height);
-    ctx.lineWidth = 1;
+    ctx.lineWidth = Math.round(scaleY) / scaleY;
     ctx.strokeStyle = scorePalette.line;
     ctx.globalAlpha = 0.55;
     for (let pitch = Math.ceil(low / 3) * 3; pitch <= high; pitch += 3) {
-      const y = pitchY(pitch);
+      const y = snapY(pitchY(pitch));
       ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(width, y); ctx.stroke();
     }
     ctx.fillStyle = scorePalette.muted;
-    ctx.font = '9px "Segoe UI", system-ui, sans-serif';
+    ctx.font = '12px "Segoe UI", system-ui, sans-serif';
     ctx.textAlign = "center";
     ctx.textBaseline = "bottom";
+    ctx.lineWidth = Math.round(scaleX) / scaleX;
     for (let second = Math.max(0, Math.ceil(windowStart)); second <= windowEnd; second += 1) {
-      const x = center + (second - position) * pixelsPerSecond;
+      const x = snapX(center + (second - position) * pixelsPerSecond);
       ctx.globalAlpha = second % 2 ? 0.22 : 0.42;
       ctx.beginPath(); ctx.moveTo(x, top); ctx.lineTo(x, bottom); ctx.stroke();
       if (second % 2 === 0 && x > 12 && x < width - 12) {
-        ctx.globalAlpha = 0.7;
+        ctx.globalAlpha = 1;
         ctx.fillText(formatTime(second), x, height - 1);
       }
     }
@@ -456,7 +488,7 @@
         if (score.ends[middle] <= windowStart) first = middle + 1;
         else last = middle;
       }
-      const noteHeight = Math.max(3, Math.min(5, (bottom - top) / (high - low) * 0.85));
+      const noteHeight = Math.max(3, Math.min(9, (bottom - top) / (high - low) * 0.85));
       ctx.save(); ctx.beginPath(); ctx.rect(0, top, width, bottom - top); ctx.clip();
       ctx.fillStyle = scorePalette.accent;
       ctx.strokeStyle = scorePalette.accent;
@@ -468,7 +500,7 @@
         const noteWidth = Math.max(2, (end - start) * pixelsPerSecond);
         const y = pitchY(pitch) - noteHeight / 2;
         const active = start <= position && position < end;
-        ctx.globalAlpha = active ? 1 : end <= position ? 0.35 : 0.62;
+        ctx.globalAlpha = active ? 1 : end <= position ? 0.55 : 0.9;
         ctx.fillRect(x, y, noteWidth, noteHeight);
         if (active) { ctx.lineWidth = 1; ctx.strokeRect(x, y - 1, noteWidth, noteHeight + 2); }
       }
@@ -478,7 +510,7 @@
     ctx.strokeStyle = scorePalette.accent;
     ctx.fillStyle = scorePalette.accent;
     ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.moveTo(center, 5); ctx.lineTo(center, bottom + 2); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(snapX(center), 5); ctx.lineTo(snapX(center), bottom + 2); ctx.stroke();
     ctx.beginPath(); ctx.moveTo(center - 3.5, 0); ctx.lineTo(center + 3.5, 0); ctx.lineTo(center, 5); ctx.closePath(); ctx.fill();
     ctx.globalAlpha = 1;
   }
@@ -543,12 +575,14 @@
   });
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) {
+      cancelScoreResize();
       clearTimeout(pollTimer);
       pollController?.abort();
       cancelScoreRequest();
       cancelAnimationFrame(frame);
       frame = null;
     } else {
+      queueScoreResize();
       failureCount = 0;
       if (token) setConnection("connecting");
       schedulePoll(0);
@@ -557,11 +591,12 @@
   });
   window.addEventListener("online", () => { failureCount = 0; schedulePoll(0); });
   window.addEventListener("offline", () => setConnection("offline", "手机网络已断开。连接到电脑所在的 Wi-Fi 后会自动重连。"));
-  window.addEventListener("pagehide", () => { clearTimeout(pollTimer); pollController?.abort(); cancelScoreRequest(); cancelAnimationFrame(frame); frame = null; });
-  window.addEventListener("pageshow", (event) => { if (event.persisted) { schedulePoll(0); if (frame === null) frame = requestAnimationFrame(animate); } });
+  window.addEventListener("pagehide", () => { clearTimeout(pollTimer); pollController?.abort(); cancelScoreRequest(); cancelAnimationFrame(frame); cancelScoreResize(); frame = null; });
+  window.addEventListener("pageshow", (event) => { if (event.persisted) { queueScoreResize(); schedulePoll(0); if (frame === null) frame = requestAnimationFrame(animate); } });
 
-  window.addEventListener("resize", resizeScore);
-  if (typeof ResizeObserver !== "undefined") new ResizeObserver(resizeScore).observe(dom.cover);
+  window.addEventListener("resize", queueScoreResize);
+  if (typeof ResizeObserver !== "undefined") new ResizeObserver(queueScoreResize).observe(dom.cover);
+  watchPixelRatio();
   resizeScore();
 
   if (token) {
