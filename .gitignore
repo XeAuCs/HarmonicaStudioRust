@@ -8,7 +8,7 @@
 
 # Local song library and user projects stay on disk, outside source history.
 /samples/*
-!/samples/*.md
+!/samples/README.md
 *.hstudio
 
 # Local credentials and machine-specific environment files.
