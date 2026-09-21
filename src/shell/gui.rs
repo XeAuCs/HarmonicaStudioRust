@@ -23,8 +23,6 @@ use windows_reactor::*;
 mod controls;
 #[path = "gui/dialogs.rs"]
 mod dialogs;
-#[path = "gui/library_popup.rs"]
-mod library_popup;
 #[path = "gui/drawing.rs"]
 mod drawing;
 #[path = "gui/editor_page.rs"]
@@ -37,6 +35,8 @@ mod import_page;
 mod keyboard;
 #[path = "gui/layout.rs"]
 mod layout;
+#[path = "gui/library_popup.rs"]
+mod library_popup;
 #[path = "gui/native.rs"]
 mod native;
 #[path = "gui/resources.rs"]
@@ -267,14 +267,11 @@ impl Studio {
             e.set_compact(c.preferences.compact);
             e.read_only = c.busy() || c.state.transition.is_some();
             e.allow_note_edits = c.capabilities().can_edit;
-            if !c.state.show_cursor && e.has_position() {
-                e.reset_timeline();
-            }
-            if c.state.transport == Transport::Playing {
-                e.follow_playback_position(c.state.logical_seek);
-            } else if !e.is_dragging() {
-                e.follow_position(c.state.logical_seek, c.state.show_cursor);
-            }
+            e.sync_transport(
+                c.state.logical_seek,
+                c.state.show_cursor,
+                c.state.transport == Transport::Playing,
+            );
             let mut timeline = self.timeline.borrow_mut();
             if !timeline.dragging {
                 timeline.position = c.state.position;
@@ -455,7 +452,12 @@ impl Component for Studio {
         if input.remote {
             let isolated = app.smoke_ms.is_some();
             app.perform(|c| {
-                if isolated { c.start_remote_local(0) } else { c.start_remote(47638) }.map(|_| ())
+                if isolated {
+                    c.start_remote_local(0)
+                } else {
+                    c.start_remote(47638)
+                }
+                .map(|_| ())
             });
         }
         let sender = context.sender();

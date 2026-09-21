@@ -7,6 +7,42 @@ fn note(pitch: i32, start: f64, end: f64) -> Note {
         velocity: 80,
     }
 }
+#[test]
+fn inactive_transport_does_not_reset_edited_view_or_cancel_panning() {
+    let mut e = EditorModel::default();
+    e.set_document(&[note(60, 0.0, 0.5), note(62, 20.0, 20.5)], None);
+    e.follow_position(20.0, true);
+    let offset = e.offset;
+    // Editing invalidates the audio preview, but is not a viewport reset.
+    e.sync_transport(0.0, false, false);
+    assert_eq!(e.offset, offset);
+    e.begin_pointer(400.0, 10.0, true);
+    e.move_pointer(440.0, 10.0);
+    let panned = e.offset;
+    e.sync_transport(0.0, false, false);
+    assert!(e.is_dragging());
+    assert_eq!(e.offset, panned);
+    e.move_pointer(480.0, 10.0);
+    assert!(e.offset < panned);
+    assert!(e.end_pointer(480.0).unwrap().seek.is_some());
+}
+#[test]
+fn inactive_transport_preserves_note_drag_after_edit() {
+    let mut e = EditorModel::default();
+    e.set_document(&[note(60, 0.0, 0.5), note(62, 20.0, 20.5)], None);
+    e.follow_position(20.0, true);
+    let (x, y) = drag_second(&mut e);
+    e.move_pointer(x + e.zoom * 0.2, y);
+    e.end_pointer(x).unwrap();
+    let offset = e.offset;
+    e.sync_transport(0.0, false, false);
+    assert_eq!(e.offset, offset);
+    let (x, y) = drag_second(&mut e);
+    e.sync_transport(0.0, false, false);
+    assert!(e.is_dragging());
+    e.move_pointer(x + e.zoom * 0.2, y);
+    assert!(e.end_pointer(x).unwrap().changed);
+}
 fn drag_second(e: &mut EditorModel) -> (f64, f64) {
     let n = &e.notes[1];
     let (x, y) = (

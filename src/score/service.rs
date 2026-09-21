@@ -234,8 +234,23 @@ fn export(
             .as_bool()
             .ok_or_else(|| anyhow::anyhow!("跳过长空白设置必须是布尔值。"))?,
     };
-    let (performance, skipped_rests, removed_rest_seconds) =
+    let trim_silence = match project.options.as_ref().and_then(|o| o.get("trim_silence")) {
+        None => false,
+        Some(v) => v
+            .as_bool()
+            .ok_or_else(|| anyhow::anyhow!("去掉开头空白设置必须是布尔值。"))?,
+    };
+    let (mut performance, skipped_rests, removed_rest_seconds) =
         compress_long_rests(&project.notes, skip_long_rests);
+    let removed_leading_seconds = if trim_silence {
+        performance.first().map_or(0.0, |n| n.start)
+    } else {
+        0.0
+    };
+    for note in &mut performance {
+        note.start -= removed_leading_seconds;
+        note.end -= removed_leading_seconds;
+    }
     let (events, delayed) = build_events(&performance)?;
     let actual = decode_events(&events)?;
     ensure!(
@@ -270,6 +285,8 @@ fn export(
                 json!(events.last().unwrap().0 as f64 / 1000.0),
             ),
             ("skip_long_rests", json!(skip_long_rests)),
+            ("trim_silence", json!(trim_silence)),
+            ("removed_leading_seconds", json!(removed_leading_seconds)),
             ("skipped_long_rests", json!(skipped_rests)),
             (
                 "removed_rest_seconds",

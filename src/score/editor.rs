@@ -379,6 +379,21 @@ impl EditorModel {
     pub fn has_position(&self) -> bool {
         self.centered_position
     }
+    pub fn sync_transport(&mut self, position: f64, show_cursor: bool, playing: bool) {
+        if playing {
+            self.follow_playback_position(position);
+        } else if !self.is_dragging() {
+            if show_cursor {
+                self.follow_position(position, true);
+            } else {
+                // Invalidating a preview hides the cursor, not the user's viewport.
+                self.centered_position = false;
+                if position.is_finite() {
+                    self.position = position.clamp(0.0, MAX_SECONDS);
+                }
+            }
+        }
+    }
     pub fn reset_timeline(&mut self) {
         self.cancel_drag();
         self.centered_position = false;

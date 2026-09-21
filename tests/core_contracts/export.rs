@@ -1,4 +1,24 @@
 use super::support::*;
+#[test]
+fn edited_leading_silence_is_trimmed_only_in_playback_and_roundtrips() {
+    let temp = tempfile::tempdir().unwrap();
+    let cancel = AtomicBool::new(false);
+    for trim in [true, false] {
+        let mut project =
+            make_project(vec![note(60, 12.0, 12.5), note(62, 13.0, 13.5)], "fixture").unwrap();
+        project.options = Some(json!({"trim_silence":trim}));
+        let original = project.clone();
+        let first = export_project(&project, temp.path(), &cancel).unwrap();
+        approx(first.actual[0].start, if trim { 0.1 } else { 12.1 });
+        approx(first.to_audio.map(12.0), first.actual[0].start);
+        approx(first.to_score.map(first.actual[0].start), 12.0);
+        assert_eq!(project, original);
+        let restored = load_project(&first.folder.join("工程.hstudio")).unwrap();
+        assert_eq!(restored.notes, original.notes);
+        let second = export_project(&restored, temp.path(), &cancel).unwrap();
+        assert_eq!(second.actual, first.actual);
+    }
+}
 
 #[test]
 fn export_outputs_share_events_and_preserve_score_on_reexport() {
