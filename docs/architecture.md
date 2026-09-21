@@ -6,20 +6,7 @@
 
 桌面界面和手机遥控共享一个 `AppController`。界面保存搜索词、弹窗状态等展示数据；工程、后台任务、保存及播放流程由控制器统一管理。网络线程与工作线程不直接操作控件或替换应用状态。
 
-```mermaid
-flowchart TD
-    Desktop[WinUI 桌面界面] --> Controller[AppController]
-    Phone[手机浏览器] --> HTTP[HTTP 服务]
-    HTTP --> Queue[命令队列]
-    Queue --> Controller
-    Controller --> Jobs[后台任务与保存队列]
-    Jobs --> Results[结果通道]
-    Results --> Controller
-    Controller --> Media[音频与游戏后端]
-    Controller --> Snapshot[状态与曲谱快照]
-    Snapshot --> HTTP
-    HTTP --> Phone
-```
+![口琴工坊架构：交互入口、共享控制器与执行层](images/architecture.svg)
 
 `src/main.rs` 提供桌面和命令行入口；命令行转换、校验等操作使用共享业务模块，诊断使用控制器与可替换后端。`src/lib.rs` 通过 `#[path]` 映射物理目录，保留 `crate::controller`、`crate::midi` 等逻辑模块路径。不要根据逻辑模块名在旧位置新建重复文件。
 

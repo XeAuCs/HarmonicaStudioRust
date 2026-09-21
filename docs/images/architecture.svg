@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="560" viewBox="0 0 1100 560" role="img" aria-labelledby="title desc">
+  <title id="title">口琴工坊：共享控制器与数据流</title>
+  <desc id="desc">桌面界面直接调用控制器，手机通过 HTTP 和命令队列调用同一控制器。控制器调度后台任务与音频游戏后端。后台结果返回控制器，发布的状态快照返回手机。</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 10 5 0 10Z" fill="#4C766B"/></marker>
+    <marker id="return" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 10 5 0 10Z" fill="#87949C"/></marker>
+    <style>
+      text { font-family: 'Segoe UI','Microsoft YaHei',sans-serif; }
+      .heading { font-size:15px; font-weight:600; fill:#60716B; letter-spacing:2px; }
+      .name { font-size:21px; font-weight:600; fill:#253C34; }
+      .detail { font-size:14px; fill:#65766F; }
+      .label { font-size:13px; fill:#62776D; }
+      .flow { fill:none; stroke:#4C766B; stroke-width:2; marker-end:url(#arrow); stroke-linejoin:round; }
+      .feedback { fill:none; stroke:#87949C; stroke-width:1.8; stroke-dasharray:6 5; marker-end:url(#return); stroke-linejoin:round; }
+    </style>
+  </defs>
+  <rect width="1100" height="560" rx="18" fill="#FCFDFB"/>
+  <text x="40" y="48" font-size="25" font-weight="650" fill="#253C34">一个控制器，两个操作入口</text>
+  <text x="40" y="76" class="detail">界面负责交互，控制器管理业务状态，任务与后端负责执行。</text>
+  <path d="M40 98H1060" stroke="#E1E7E1"/>
+  <text x="50" y="130" class="heading">01  交互入口</text>
+  <text x="430" y="130" class="heading">02  共享业务状态</text>
+  <text x="810" y="130" class="heading">03  执行层</text>
+
+  <rect x="50" y="160" width="240" height="96" rx="12" fill="#F1F5F0" stroke="#D8E2D7"/>
+  <text x="72" y="200" class="name">WinUI 桌面界面</text>
+  <text x="72" y="228" class="detail">编辑 · 选曲 · 播放控制</text>
+
+  <rect x="50" y="308" width="240" height="112" rx="12" fill="#F1F5F0" stroke="#D8E2D7"/>
+  <text x="72" y="346" class="name">手机浏览器</text>
+  <text x="72" y="376" class="detail">HTTP 服务 → 命令队列</text>
+  <text x="72" y="399" class="detail">网络线程不修改业务状态</text>
+
+  <rect x="430" y="198" width="240" height="182" rx="14" fill="#E7F0E9" stroke="#86AB92" stroke-width="1.5"/>
+  <rect x="450" y="220" width="84" height="24" rx="6" fill="#D0E2D4"/>
+  <text x="462" y="237" font-size="12" fill="#355D43">唯一状态入口</text>
+  <text x="450" y="276" class="name">AppController</text>
+  <text x="450" y="307" class="detail">工程 · 保存 · 播放 · 生命周期</text>
+  <text x="450" y="348" class="detail">校验结果后统一更新状态</text>
+
+  <rect x="810" y="160" width="240" height="112" rx="12" fill="#F4F6F8" stroke="#DAE1E6"/>
+  <text x="832" y="198" class="name">后台任务与保存</text>
+  <text x="832" y="229" class="detail">加载 · 转换 · 导出 · 写入</text>
+  <text x="832" y="252" class="detail">结果经通道返回控制器</text>
+
+  <rect x="810" y="328" width="240" height="92" rx="12" fill="#F4F6F8" stroke="#DAE1E6"/>
+  <text x="832" y="366" class="name">音频与游戏后端</text>
+  <text x="832" y="395" class="detail">试听音频 · AutoHotkey 演奏</text>
+
+  <path class="flow" d="M290 208H350V253H430"/>
+  <text x="319" y="192" class="label">界面操作</text>
+  <path class="flow" d="M290 346H375V312H430"/>
+  <text x="316" y="370" class="label">遥控命令</text>
+  <path class="flow" d="M670 253H723V190H810"/>
+  <text x="735" y="175" class="label">调度</text>
+  <path class="feedback" d="M810 244H755V291H670"/>
+  <text x="767" y="279" class="label">结果</text>
+  <path class="flow" d="M670 345H723V372H810"/>
+  <text x="734" y="397" class="label">播放控制</text>
+  <path class="feedback" d="M550 380V462H170V420"/>
+  <rect x="288" y="451" width="160" height="22" fill="#FCFDFB"/>
+  <text x="302" y="467" class="label">发布状态与曲谱快照</text>
+
+  <path d="M50 518H90" class="flow"/>
+  <text x="102" y="523" class="detail">操作与任务</text>
+  <path d="M265 518H305" class="feedback"/>
+  <text x="317" y="523" class="detail">结果与状态回传</text>
+  <text x="1050" y="523" text-anchor="end" font-size="12" fill="#88978F">HARMONICA STUDIO / ARCHITECTURE</text>
+</svg>
