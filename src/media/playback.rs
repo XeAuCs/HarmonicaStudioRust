@@ -375,6 +375,27 @@ impl GameBackend for SilentGame {
         GameStatus::default()
     }
 }
+// Command files are polled by another process. Retry only transient Windows
+// access/sharing conflicts, with a short bound so UI callers cannot wait forever.
+fn write_command_file(path: &Path, bytes: &[u8]) -> Result<()> {
+    let started = Instant::now();
+    loop {
+        match atomic_write(path, bytes) {
+            Ok(()) => return Ok(()),
+            Err(error) => {
+                let transient = cfg!(windows)
+                    && error
+                        .downcast_ref::<std::io::Error>()
+                        .is_some_and(|e| matches!(e.raw_os_error(), Some(5 | 32 | 33)));
+                if !transient || started.elapsed() >= std::time::Duration::from_millis(100) {
+                    return Err(error);
+                }
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
+        }
+    }
+}
+
 pub struct ScriptPlayer {
     control_dir: PathBuf,
     process: Option<Child>,
@@ -470,7 +491,7 @@ impl ScriptPlayer {
             action,
             start_ms: start,
         };
-        atomic_write(&dir.join("command.json"), &serde_json::to_vec(&payload)?)?;
+        write_command_file(&dir.join("command.json"), &serde_json::to_vec(&payload)?)?;
         self.command_id = id;
         if let Some(ms) = start {
             self.start_ms = ms;

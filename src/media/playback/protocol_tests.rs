@@ -35,6 +35,9 @@ running := false
 startAt := 0
 playOffsetMs := 0
 minimumPosition := 0
+; Match production's periodic status publication: a transient replacement
+; failure must not permanently lose an otherwise accepted command's receipt.
+SetTimer(PublishStatus, 100)
 PublishStatus()
 loop {{
     CheckControl()
@@ -42,10 +45,11 @@ loop {{
 }}
 CheckControl() {{{control}
 BeginPlay() {{
-    global state, position, defaultStartMs, stateMessage
+    global state, position, defaultStartMs, stateMessage, commandFile
     state := "countdown"
     position := defaultStartMs / 1000
     stateMessage := "play dispatched"
+    FileAppend("dispatched", commandFile ".dispatched")
 }}
 StopPlay(message) {{
     global state, position, stateMessage
@@ -99,7 +103,7 @@ NowMs() {{
         }
     }
     fn raw(&self, text: &str) {
-        atomic_write(&self.dir.path().join("command.json"), text.as_bytes()).unwrap();
+        write_command_file(&self.dir.path().join("command.json"), text.as_bytes()).unwrap();
     }
 }
 impl Drop for Harness {
@@ -115,6 +119,65 @@ impl Drop for Harness {
             let _ = child.wait();
         }
     }
+}
+
+#[test]
+fn command_retries_short_lock_but_preserves_id_on_persistent_lock() {
+    use std::os::windows::fs::OpenOptionsExt;
+    let mut h = Harness::new();
+    h.player.command("stop", None).unwrap();
+    h.wait_id(1);
+    let path = h.dir.path().join("command.json");
+    let reader = fs::OpenOptions::new()
+        .read(true)
+        .share_mode(1)
+        .open(&path)
+        .unwrap();
+    let release = thread::spawn(move || {
+        thread::sleep(Duration::from_millis(30));
+        drop(reader);
+    });
+    h.player.command("play", None).unwrap();
+    release.join().unwrap();
+    h.wait_id(2);
+    let reader = fs::OpenOptions::new()
+        .read(true)
+        .share_mode(1)
+        .open(&path)
+        .unwrap();
+    let previous = fs::read(&path).unwrap();
+    assert!(h.player.command("stop", None).is_err());
+    assert_eq!(h.player.command_id, 2);
+    assert_eq!(fs::read(&path).unwrap(), previous);
+    drop(reader);
+    h.player.command("stop", None).unwrap();
+    assert_eq!(h.wait_id(3)["state"], "ready");
+}
+
+#[test]
+fn status_recovers_after_reader_temporarily_blocks_replacement() {
+    use std::os::windows::fs::OpenOptionsExt;
+    let mut h = Harness::new();
+    // Reproduce a failed status publication without altering command parsing.
+    let reader = fs::OpenOptions::new()
+        .read(true)
+        .share_mode(1) // FILE_SHARE_READ: deliberately deny replacement.
+        .open(h.dir.path().join("status.json"))
+        .unwrap();
+    h.player.command("play", None).unwrap();
+    let start = Instant::now();
+    while !h.dir.path().join("command.json.dispatched").exists() {
+        assert!(
+            start.elapsed() < Duration::from_secs(3),
+            "play was not dispatched"
+        );
+        thread::sleep(Duration::from_millis(10));
+    }
+    thread::sleep(Duration::from_millis(150));
+    assert_eq!(h.snapshot()["request_id"], 0);
+    drop(reader);
+    assert_eq!(h.wait_id(1)["state"], "countdown");
+    assert_eq!(h.player.status().state, "countdown");
 }
 
 #[test]
