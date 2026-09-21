@@ -44,6 +44,19 @@ function Remove-FixtureLink([string]$Path){
     [IO.Directory]::Delete($resolved)
 }
 try {
+    Run-Check '打包阶段进度单调递增且完成时收起' {
+        $progressRecords=[Collections.Generic.List[object]]::new()
+        function Write-Progress { param($Id,$Activity,$Status,$PercentComplete,[switch]$Completed)
+            $progressRecords.Add([PSCustomObject]@{Id=$Id;Percent=$PercentComplete;Completed=$Completed.IsPresent})
+        }
+        foreach($stageNumber in 1..6){Write-BuildStage $stageNumber '阶段夹具'}
+        Complete-BuildProgress
+        Assert-True ($progressRecords.Count -eq 7) '阶段或完成事件缺失。'
+        Assert-True ($progressRecords[0].Percent -eq 0) '首阶段不应提前报告完成。'
+        foreach($index in 1..5){Assert-True ($progressRecords[$index].Percent -gt $progressRecords[$index-1].Percent) '阶段进度没有递增。'}
+        Assert-True ($progressRecords[5].Percent -lt 100) '安装完成前不应显示百分之百。'
+        Assert-True $progressRecords[6].Completed '完成后没有收起进度条。'
+    }
     Run-Check '版本选择默认不更新且非法输入可重试' {
         $current='2.0.0-alpha.1'
         foreach($inputValue in @('', '   ', $current)) {
@@ -73,6 +86,10 @@ try {
         Assert-True ($LASTEXITCODE -eq 0) '日志夹具编译失败。'
         $log=Join-Path $root 'output.log'
         $arguments=@('中文 空格','quote"inside','C:\ending\','', 'a&b!')
+        $progressRecords=[Collections.Generic.List[object]]::new()
+        function Write-Progress { param($Id,$Activity,$Status,$PercentComplete,[switch]$Completed)
+            $progressRecords.Add([PSCustomObject]@{Id=$Id;Percent=$PercentComplete;Completed=$Completed.IsPresent})
+        }
         $leaked=@(Invoke-LoggedCommand -Executable $exe -Arguments $arguments -LogPath $log -Label '日志夹具')
         Assert-True ($leaked.Count -eq 0) '正常运行仍向控制台泄露详细输出。'
         $text=[IO.File]::ReadAllText($log)
@@ -82,6 +99,8 @@ try {
         $error=Assert-Fails {Invoke-LoggedCommand -Executable $exe -Arguments @('fail') -LogPath (Join-Path $root 'failure.log') -Label '日志夹具'}
         Assert-True ($error.Message.Contains('退出码 23')) '失败退出码被吞掉。'
         Assert-True ($error.Message.Contains('ERR3999') -and $error.Message.Contains('failure.log')) '失败未显示错误摘要和日志路径。'
+        Assert-True (@($progressRecords | Where-Object Completed).Count -eq 2) '成功和失败都必须收起任务进度。'
+        Assert-True (@($progressRecords | Where-Object {-not $_.Completed -and $_.Percent -eq -1}).Count -ge 2) '耗时任务必须显示未定进度，不能虚报百分比。'
     }
     Run-Check '便携启动器透传复杂参数、工作目录、双输出和退出码' {
         $root=Join-Path $fixtureRoot '启动器 中文 空格 &!'

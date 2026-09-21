@@ -2,7 +2,7 @@
 
 口琴工坊的独立 Rust 重构，用于 MIDI 声部选择、口琴曲谱编辑、电脑试听和游戏演奏。桌面使用 WinUI 3 控件和 Direct2D 画布，手机通过浏览器遥控电脑。业务、MIDI、编辑、导出、试听、遥控服务和诊断使用 Rust，源码、测试、构建与成品均不需要 Python。
 
-当前版本为 **2.1.6**，实际版本以 [Cargo.toml](Cargo.toml) 为准。项目仍处于迁移验收阶段。`verification/` 中的日志和截图仅保存在本地，不随 GitHub 源码分发；自动检查通过不代表所有设备与界面场景都已验收。
+当前版本为 **2.1.9**，实际版本以 [Cargo.toml](Cargo.toml) 为准。项目仍处于迁移验收阶段。`verification/` 中的日志和截图仅保存在本地，不随 GitHub 源码分发；自动检查通过不代表所有设备与界面场景都已验收。
 
 ## 当前功能
 
@@ -111,7 +111,7 @@ Remove-Item Env:HARMONICA_TEST_CORPUS
 
 升级旧平铺目录时，仅处理与新包清单对应的旧程序文件，以及明确列出的旧图标、旧项目许可证和调试文件，并移除由此变空的目录。内容不同或已废弃的旧文件备份到 `program/previous-layout/`；无法确认的个人文件留在原处。迁移与程序安装共用回滚事务。
 
-打包窗口显示六个阶段，完成后列出用时、程序位置和保留文件数量。完整日志保存到每次独立的 `verification/build-日期时间-编号/`：`rust-tests.log` 为测试详情，`*.stderr.log` 为编译器诊断，`script-tests.log` 为安装保护检查，`portable-smoke.json` 为成品自检，`summary.txt` 为成功摘要；失败记录见 `failure.log`。历史运行日志不会被后一次覆盖。
+打包窗口显示六阶段进度条；百分比表示已完成阶段，测试与编译等耗时命令另显示当前任务和已用时间，不估算编译完成百分比。详细输出仍写入日志；成功或失败后收起进度条，完成后列出用时、程序位置和保留文件数量。完整日志保存到每次独立的 `verification/build-日期时间-编号/`：`rust-tests.log` 为测试详情，`*.stderr.log` 为编译器诊断，`script-tests.log` 为安装保护检查，`portable-smoke.json` 为成品自检，`summary.txt` 为成功摘要；失败记录见 `failure.log`。历史运行日志不会被后一次覆盖。
 
 第一次编译需下载 Rust 依赖和固定版本的微软运行组件。WinUI Rust 绑定固定于微软 windows-rs 提交，最小源码集和本地适配说明在 third_party/windows-rs/SOURCE.md。成品第三方目录含依赖版本与许可证清单。
 

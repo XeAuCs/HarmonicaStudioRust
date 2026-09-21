@@ -1,4 +1,11 @@
 ﻿# Console summaries and per-run diagnostic logs. Dot-source common.ps1 first.
+function Write-BuildStage([ValidateRange(1,6)][int]$Stage, [string]$Label) {
+    Write-Host "[$Stage/6] $Label"
+    Write-Progress -Id 70 -Activity '口琴工坊 · 生成便携版' -Status "第 $Stage / 6 阶段：$Label" -PercentComplete ([int](100 * ($Stage - 1) / 6))
+}
+function Complete-BuildProgress {
+    Write-Progress -Id 70 -Activity '口琴工坊 · 生成便携版' -Completed
+}
 function New-RunLogDirectory([string]$Name) {
     $root = Join-Path $ProjectRoot 'verification'
     Assert-NoLinksInPath $root
@@ -36,11 +43,15 @@ function Invoke-LoggedCommand(
         # Drain both streams concurrently so compiler output cannot deadlock a full pipe.
         $outTask = $process.StandardOutput.BaseStream.CopyToAsync($stdout)
         $errTask = $process.StandardError.BaseStream.CopyToAsync($stderr)
-        $process.WaitForExit()
+        $commandTimer = [Diagnostics.Stopwatch]::StartNew()
+        do {
+            Write-Progress -Id 71 -Activity $Label -Status ('正在运行 · 已用 {0:N0} 秒 · 详细内容写入日志' -f $commandTimer.Elapsed.TotalSeconds) -PercentComplete -1
+        } while (-not $process.WaitForExit(500))
         $null = $outTask.GetAwaiter().GetResult()
         $null = $errTask.GetAwaiter().GetResult()
         $code = $process.ExitCode
     } finally {
+        Write-Progress -Id 71 -Activity $Label -Completed
         if ($stdout) { $stdout.Dispose() }
         if ($stderr) { $stderr.Dispose() }
         $process.Dispose()

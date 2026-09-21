@@ -1,5 +1,6 @@
 ﻿param([string]$Version='', [string]$DistPath='', [switch]$Console, [switch]$PromptVersion)
 trap {
+    Write-Progress -Id 70 -Activity '口琴工坊 · 生成便携版' -Completed
     if ($runLogs -and (Test-Path -LiteralPath $runLogs)) {
         $_ | Format-List * -Force | Out-String -Width 240 | Out-File -LiteralPath (Join-Path $runLogs 'failure.log') -Encoding UTF8
     }
@@ -13,7 +14,7 @@ $runLogs=New-RunLogDirectory 'build'
 $timer=[Diagnostics.Stopwatch]::StartNew()
 Write-Host "口琴工坊 · 生成便携版`n"
 Write-Host "详细日志：$runLogs`n"
-Write-Host '[1/6] 检查环境与运行状态'
+Write-BuildStage 1 '检查环境与运行状态'
 if (-not $DistPath) { $DistPath=Join-Path $ProjectRoot 'app' }
 $DistPath=[IO.Path]::GetFullPath($DistPath).TrimEnd('\','/')
 $destination=Join-Path $DistPath 'HarmonicaStudio'
@@ -55,11 +56,11 @@ try {
         $packageVersion=$currentVersion
         Write-Host "版本号：$packageVersion（保持不变）"
     }
-    Write-Host '[2/6] 运行自动检查'
+    Write-BuildStage 2 '运行自动检查'
     & (Join-Path $PSScriptRoot 'test.ps1') -LogDirectory $runLogs -NoBanner
-    Write-Host '[3/6] 编译正式版本（首次运行可能较久）'
+    Write-BuildStage 3 '编译正式版本（首次运行可能较久）'
     Invoke-LoggedCommand -Executable $cargo -Arguments @('build','--locked','--release','--features','desktop','--target-dir',(Join-Path $ProjectRoot 'target')) -LogPath (Join-Path $runLogs 'compile.log') -Label '正式版编译'
-    Write-Host '[4/6] 收集运行资源与许可证'
+    Write-BuildStage 4 '收集运行资源与许可证'
     $release=Join-Path $ProjectRoot 'target\release'
     Assert-NoLinksInPath $release
     $program=Join-Path $portable 'program'
@@ -89,12 +90,12 @@ try {
     }
     & (Join-Path $PSScriptRoot 'collect-licenses.ps1') -Destination (Join-Path $program 'third_party\licenses') *>&1 | Out-File -LiteralPath (Join-Path $runLogs 'licenses.log') -Encoding UTF8
     New-Item -ItemType Directory -Path (Join-Path $portable 'data') -Force | Out-Null
-    Write-Host '[5/6] 检查成品完整性与功能'
+    Write-BuildStage 5 '检查成品完整性与功能'
     $smoke=& (Join-Path $PSScriptRoot 'smoke.ps1') -Path $portable -ExpectedVersion $packageVersion
     $smoke | Set-Content -LiteralPath (Join-Path $runLogs 'portable-smoke.json') -Encoding UTF8
     $smoke | Set-Content -LiteralPath (Join-Path $verification 'portable-smoke.json') -Encoding UTF8
     # Recheck after the build: an existing user program may have been opened meanwhile.
-    Write-Host '[6/6] 安装便携版并保留已有数据'
+    Write-BuildStage 6 '安装便携版并保留已有数据'
     Assert-PortableNotRunning $targetExe
     Assert-PortableNotRunning (Join-Path $destination 'program\HarmonicaStudio.exe')
     $installed=Install-PortableTree -Source $portable -Destination $destination -Rollback $rollback -MigrateLegacy
@@ -114,6 +115,7 @@ if($buildFailure){
     throw $buildFailure
 }
 if($cleanupFailures.Count){throw ($cleanupFailures -join "`n")}
+Complete-BuildProgress
 $summary = @(
     ("打包完成，用时 {0:N1} 秒。" -f $timer.Elapsed.TotalSeconds),
     "版本号：$packageVersion",
