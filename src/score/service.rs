@@ -40,9 +40,13 @@ pub fn check_cancel(cancel: &AtomicBool) -> Result<()> {
 }
 pub fn load_ranked_midi(source: &Path, cancel: &AtomicBool) -> Result<LoadedParts> {
     check_cancel(cancel)?;
+    let parse_timing = crate::performance::Span::new("midi.parse");
     let (parts, names) = read_midi(source)?;
+    drop(parse_timing);
     check_cancel(cancel)?;
+    let rank_timing = crate::performance::Span::new("midi.rank_parts");
     let ranked = rank_parts(&parts, &names);
+    drop(rank_timing);
     let keys = ranked.iter().map(|(k, _)| *k).collect();
     let recommendations = ranked.into_iter().collect();
     check_cancel(cancel)?;
@@ -93,10 +97,15 @@ pub fn convert(
     options.validate()?;
     let source = source.canonicalize().context("无法读取来源 MIDI。");
     let source = source?;
+    let parse_timing = crate::performance::Span::new("convert.parse");
     let (parts, names) = read_midi(&source)?;
+    drop(parse_timing);
     check_cancel(cancel)?;
+    let melody_timing = crate::performance::Span::new("convert.extract_melody");
     let (notes, mut report) = prepare(&parts, &names, options)?;
+    drop(melody_timing);
     check_cancel(cancel)?;
+    let project_timing = crate::performance::Span::new("convert.build_project");
     let source_hash = format!("{:x}", Sha256::digest(fs::read(&source)?));
     let source_path = display_path(&source);
     report["source"] = json!(source_path);
@@ -109,6 +118,7 @@ pub fn convert(
     project.source = Some(json!({"path":source_path,"sha256":source_hash}));
     project.options = Some(serde_json::to_value(options)?);
     project.report = Some(report);
+    drop(project_timing);
     export(&project, output_root, cancel, "midi_conversion")
 }
 fn display_path(path: &Path) -> String {
@@ -209,6 +219,8 @@ fn export(
     cancel: &AtomicBool,
     export_type: &str,
 ) -> Result<ExportResult> {
+    let _timing = crate::performance::Span::new("export.total");
+    let plan_timing = crate::performance::Span::new("export.build_events");
     let mut project = validate_project(input)?;
     ensure!(
         !project.notes.is_empty(),
@@ -266,7 +278,9 @@ fn export(
     let folder = output_root.join(format!("{}-{}", safe_label(&project.title), unique_id()));
     let stage = output_root.join(format!(".partial-{}", unique_id()));
     fs::create_dir(&stage)?;
+    drop(plan_timing);
     let result = (|| -> Result<ExportResult> {
+        let files_timing = crate::performance::Span::new("export.write_files");
         check_cancel(cancel)?;
         let options = project
             .options
@@ -319,10 +333,15 @@ fn export(
         )?;
         project.report = Some(report.clone());
         save_project(&stage.join("工程.hstudio"), &project)?;
+        drop(files_timing);
+        let wav_timing = crate::performance::Span::new("preview.render_wav");
         render_wav(&events, &stage.join("试听.wav"), cancel, 22050)?;
+        drop(wav_timing);
+        let commit_timing = crate::performance::Span::new("export.commit");
         let result = prepare_export(folder.clone(), report, project, actual);
         check_cancel(cancel)?;
         fs::rename(&stage, &folder)?;
+        drop(commit_timing);
         Ok(result)
     })();
     if result.is_err() {

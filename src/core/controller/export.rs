@@ -30,6 +30,7 @@ impl AppController {
     pub(super) fn execute(&mut self, action: Action, follow: FollowUp) -> Result<()> {
         match action {
             Action::Load(path, options, prepare) => {
+                let _timing = crate::performance::Span::new("selection.dispatch");
                 self.invalidate()?;
                 self.state.set_project(None, true, true);
                 self.state.source = Some(path.clone());
@@ -48,7 +49,10 @@ impl AppController {
                     self.state.document_id,
                     follow,
                     move |cancel| {
+                        let cache_timing =
+                            crate::performance::Span::new("selection.restore_project");
                         let (auto, project) = find_song_project(&root, &path, cancel)?;
+                        drop(cache_timing);
                         let loaded = service::load_ranked_midi(&path, cancel)?;
                         Ok(WorkResult::Load(loaded, auto, project, prepare))
                     },
@@ -135,6 +139,7 @@ impl AppController {
         Ok(())
     }
     pub(super) fn invalidate(&mut self) -> Result<()> {
+        let _timing = crate::performance::Span::new("selection.stop_previous");
         self.state.result = None;
         self.state.export_revision = None;
         self.state.preview_duration = 0.;
@@ -155,6 +160,7 @@ impl AppController {
         Ok(())
     }
     pub(super) fn install_export(&mut self, result: ExportResult, replace: bool) -> Result<()> {
+        let _timing = crate::performance::Span::new("selection.install_result");
         if replace {
             self.state
                 .set_project(Some(result.project.clone()), false, true);
@@ -189,6 +195,8 @@ impl AppController {
         let Some(done) = self.jobs.take_completed() else {
             return Ok(());
         };
+        let _context = crate::performance::job_context(done.job.timing_id);
+        let _timing = crate::performance::Span::new("job.apply_result");
         if done.job.cancel.load(Ordering::Relaxed) {
             self.status("已取消；可以继续编辑或重新导出。");
             return Ok(());

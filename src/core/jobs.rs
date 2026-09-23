@@ -10,6 +10,7 @@ use std::{
         mpsc,
     },
     thread,
+    time::Instant,
 };
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FollowUp {
@@ -32,7 +33,8 @@ pub struct Job<T> {
     pub kind: JobKind,
     pub follow_up: FollowUp,
     pub cancel: Arc<AtomicBool>,
-    receiver: mpsc::Receiver<Result<T>>,
+    pub timing_id: u64,
+    receiver: mpsc::Receiver<(Result<T>, Instant)>,
 }
 pub struct Completed<T> {
     pub job: Job<T>,
@@ -69,12 +71,23 @@ impl<T: Send + 'static> JobRunner<T> {
         let cancel = Arc::new(AtomicBool::new(false));
         let flag = cancel.clone();
         let (tx, rx) = mpsc::channel();
+        let timing_id = crate::performance::next_id();
+        let queued = Instant::now();
         thread::Builder::new()
             .name(format!("harmonica-{kind:?}"))
             .spawn(move || {
+                let _context = crate::performance::job_context(timing_id);
+                crate::performance::elapsed("job.queue", queued.elapsed(), timing_id);
+                let timing = crate::performance::Span::new(match kind {
+                    JobKind::Load => "job.load",
+                    JobKind::Convert => "job.convert",
+                    JobKind::Export => "job.export",
+                    JobKind::Library => "job.library",
+                });
                 let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| work(&flag)))
                     .unwrap_or_else(|_| Err(anyhow::anyhow!("后台任务意外结束")));
-                let _ = tx.send(result);
+                drop(timing);
+                let _ = tx.send((result, Instant::now()));
             })?;
         self.current = Some(Job {
             number: self.next,
@@ -83,6 +96,7 @@ impl<T: Send + 'static> JobRunner<T> {
             kind,
             follow_up,
             cancel,
+            timing_id,
             receiver: rx,
         });
         Ok(())
@@ -105,7 +119,14 @@ impl<T: Send + 'static> JobRunner<T> {
     }
     pub fn take_completed(&mut self) -> Option<Completed<T>> {
         let result = match self.current.as_ref()?.receiver.try_recv() {
-            Ok(r) => r,
+            Ok((r, finished)) => {
+                crate::performance::elapsed(
+                    "job.result_wait",
+                    finished.elapsed(),
+                    self.current.as_ref()?.timing_id,
+                );
+                r
+            }
             Err(mpsc::TryRecvError::Empty) => return None,
             Err(_) => Err(anyhow::anyhow!("后台任务未返回结果")),
         };
@@ -212,6 +233,7 @@ impl SaveQueue {
         let launched = thread::Builder::new()
             .name("harmonica-save".into())
             .spawn(move || {
+                let _timing = crate::performance::Span::new("save.write");
                 let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                     if let Some(p) = &copy.project {
                         for path in &copy.paths {

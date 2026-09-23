@@ -44,8 +44,10 @@ loop {{
     Sleep(10)
 }}
 CheckControl() {{{control}
-BeginPlay() {{
+BeginPlay(showTip := true) {{
     global state, position, defaultStartMs, stateMessage, commandFile
+    if showTip
+        throw Error("Remote playback must suppress the desktop countdown tooltip")
     state := "countdown"
     position := defaultStartMs / 1000
     stateMessage := "play dispatched"

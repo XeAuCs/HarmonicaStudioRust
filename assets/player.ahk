@@ -44,6 +44,7 @@ if A_Args.Length && (A_Args[1] = "--validate" || A_Args[1] = "--dump-events") {
     ExitApp(0)
 }
 running := false
+showCountdownTip := true
 target := 0
 nextEvent := 1
 startAt := 0
@@ -100,7 +101,7 @@ CheckControl() {
         if parsed["action"] = "stop"
             StopPlay("已从手机停止演奏。")
         else
-            BeginPlay()
+            BeginPlay(false)
         PublishStatus()
     }
 }
@@ -246,10 +247,11 @@ EventsFrom(startMs) {
     return clipped
 }
 
-BeginPlay() {
+BeginPlay(showTip := true) {
     global running, target, nextEvent, startAt, events
     global state, stateMessage, position
     global activeEvents, defaultStartMs, playOffsetMs, minimumPosition
+    global showCountdownTip
     ; A repeated phone request never toggles a playing song off.
     if running
         return
@@ -270,6 +272,7 @@ BeginPlay() {
         return
     }
     nextEvent := 1
+    showCountdownTip := showTip
     startAt := NowMs() + 3000
     playOffsetMs := defaultStartMs ? defaultStartMs - 100 : 0
     minimumPosition := defaultStartMs / 1000
@@ -286,6 +289,7 @@ BeginPlay() {
 Tick() {
     global running, target, nextEvent, startAt, activeEvents, heldKeys
     global state, stateMessage
+    global showCountdownTip
     if !running
         return
     if !WinActive("ahk_id " target) {
@@ -296,7 +300,8 @@ Tick() {
     if elapsed < 0 {
         state := "countdown"
         stateMessage := Ceil(-elapsed/1000) " 秒后开始演奏；F6 停止，F8 退出。"
-        ToolTip("口琴将在 " Ceil(-elapsed/1000) " 秒后开始；F6 停止")
+        if showCountdownTip
+            ToolTip("口琴将在 " Ceil(-elapsed/1000) " 秒后开始；F6 停止")
         return
     }
     state := "playing"

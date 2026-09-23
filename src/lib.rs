@@ -25,6 +25,8 @@ pub mod models;
 pub mod notes;
 #[path = "core/paths.rs"]
 pub mod paths;
+#[path = "core/performance.rs"]
+pub mod performance;
 #[path = "media/playback.rs"]
 pub mod playback;
 #[path = "core/preferences.rs"]

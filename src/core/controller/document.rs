@@ -49,6 +49,7 @@ impl AppController {
                 request,
                 action,
                 follow,
+                queued_at: Instant::now(),
             });
             self.state.transition = Some(transition.into());
             self.status("正在保存当前工程…");
@@ -82,6 +83,7 @@ impl AppController {
     ) -> Result<()> {
         self.idle()?;
         ensure!(path.is_file(), "MIDI 文件不存在。");
+        let _timing = crate::performance::Span::new("selection.request");
         self.preserve_and_do(
             Action::Load(paths::absolute(path)?, options, prepare),
             "load",
@@ -237,6 +239,11 @@ impl AppController {
                 }
                 if self.pending.as_ref().is_some_and(|p| p.request == r.number) {
                     let pending = self.pending.take().unwrap();
+                    crate::performance::elapsed(
+                        "selection.save_wait",
+                        pending.queued_at.elapsed(),
+                        0,
+                    );
                     self.state.transition = None;
                     if (r.document, r.revision) != (self.state.document_id, self.state.revision) {
                         self.report_error(anyhow::anyhow!("工程已变化，请重新执行操作。"));

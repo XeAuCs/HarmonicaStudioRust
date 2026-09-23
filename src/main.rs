@@ -3,6 +3,12 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 use harmonica_studio::{diagnostics, melody, midi, models::Options, project, service};
 use std::{path::PathBuf, sync::atomic::AtomicBool};
+#[cfg(windows)]
+#[path = "core/elevation.rs"]
+mod elevation;
+#[cfg(windows)]
+#[path = "core/startup_priority.rs"]
+mod startup_priority;
 
 #[derive(Parser)]
 #[command(name = "HarmonicaStudio", version, about = "口琴工坊 · Rust / WinUI 3")]
@@ -85,13 +91,43 @@ fn run(cli: Cli) -> Result<()> {
     let cancel = AtomicBool::new(false);
     let output = match cli.command {
         None | Some(Command::Gui { .. }) => {
+            #[cfg(windows)]
+            if elevation::relaunch_if_needed()? {
+                return Ok(());
+            }
+            let log = harmonica_studio::paths::data_root()
+                .join("logs")
+                .join(format!(
+                    "performance-{}.jsonl",
+                    harmonica_studio::paths::unique_id()
+                ));
+            if let Err(error) = harmonica_studio::performance::initialize(&log) {
+                eprintln!("无法创建性能日志：{error}");
+            }
+            let heartbeat = harmonica_studio::performance::start_process_heartbeat().ok();
+            #[cfg(windows)]
+            if let Err(error) = startup_priority::apply() {
+                // Scheduling failure must not prevent opening the user's work.
+                let message = format!("无法设置高于正常优先级，继续以当前优先级运行：{error}");
+                eprintln!("{message}");
+                let logs = harmonica_studio::paths::data_root().join("logs");
+                let _ = std::fs::create_dir_all(&logs);
+                let _ = std::fs::write(logs.join("startup-priority-error.log"), message);
+            }
             let file = if let Some(Command::Gui { file }) = cli.command {
                 file
             } else {
                 None
             };
             #[cfg(all(windows, feature = "desktop"))]
-            return harmonica_studio::gui::run(file, cli.remote);
+            {
+                let result = harmonica_studio::gui::run(file, cli.remote);
+                drop(heartbeat);
+                if let Err(error) = harmonica_studio::performance::shutdown() {
+                    eprintln!("性能日志未能完整写入：{error}");
+                }
+                return result;
+            }
             #[cfg(not(all(windows, feature = "desktop")))]
             {
                 let _ = file;

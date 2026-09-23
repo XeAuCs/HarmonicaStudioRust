@@ -137,6 +137,7 @@ struct Studio {
     committed_theme: String,
     error_sender: Option<LocalSender<Message>>,
     timer: Option<ComponentTimer>,
+    timer_fired_at: Rc<Cell<Option<Instant>>>,
     options: Options,
     error: String,
     library_menu: bool,
@@ -314,9 +315,30 @@ impl Studio {
         } else {
             100
         };
-        match context.set_timeout(Duration::from_millis(delay), Message::Tick) {
+        let delay = Duration::from_millis(delay);
+        let scheduled = Instant::now();
+        self.timer_fired_at.set(None);
+        let fired_at = Rc::clone(&self.timer_fired_at);
+        let window = Rc::clone(&self.native_window);
+        match context.set_timeout_observed(delay, Message::Tick, move || {
+            let fired = Instant::now();
+            fired_at.set(Some(fired));
+            let late = scheduled.elapsed().saturating_sub(delay);
+            if late >= Duration::from_millis(250) {
+                let stage = match native::window_visibility(window.get()) {
+                    native::WindowVisibility::Visible => "ui.timer.fire_late.visible",
+                    native::WindowVisibility::Minimized => "ui.timer.fire_late.minimized",
+                    native::WindowVisibility::Hidden => "ui.timer.fire_late.hidden",
+                    native::WindowVisibility::Unknown => "ui.timer.fire_late.unknown",
+                };
+                crate::performance::elapsed(stage, late, 0);
+            }
+        }) {
             Ok(t) => self.timer = Some(t),
-            Err(e) => self.error = e.to_string(),
+            Err(e) => {
+                crate::performance::elapsed("ui.timer.schedule_error", Duration::ZERO, 0);
+                self.error = e.to_string();
+            }
         }
     }
     fn save_picker(&mut self, context: &ComponentContext<Self>) {
@@ -420,6 +442,7 @@ impl Component for Studio {
             committed_theme,
             error_sender: Some(error_sender),
             timer: None,
+            timer_fired_at: Rc::new(Cell::new(None)),
             options,
             error,
             library_menu: false,

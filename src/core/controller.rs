@@ -55,6 +55,7 @@ struct PendingAction {
     request: u64,
     action: Action,
     follow: FollowUp,
+    queued_at: Instant,
 }
 pub struct AppController {
     pub home: PathBuf,
@@ -77,6 +78,7 @@ pub struct AppController {
     playback_clock: PlaybackClock,
     last_audio_poll: Instant,
     last_remote_publish: Instant,
+    last_poll: Instant,
     score_cache: Value,
     score_key: Option<(u64, u64, Option<u64>, bool)>,
     closing_resources: bool,
@@ -152,6 +154,7 @@ impl AppController {
             playback_clock: PlaybackClock::default(),
             last_audio_poll: Instant::now(),
             last_remote_publish: Instant::now(),
+            last_poll: Instant::now(),
             score_cache: Value::Null,
             score_key: None,
             closing_resources: false,
@@ -260,6 +263,12 @@ impl AppController {
         }
     }
     pub fn poll(&mut self) -> Vec<ControllerEvent> {
+        let poll_started = Instant::now();
+        let gap = self.last_poll.elapsed();
+        self.last_poll = Instant::now();
+        if gap >= Duration::from_millis(500) {
+            crate::performance::elapsed("controller.poll_gap", gap, 0);
+        }
         if !self.state.closed {
             self.poll_saves();
             if self.closing_resources {
@@ -287,6 +296,12 @@ impl AppController {
                     .unwrap_or_default();
                 for c in commands {
                     if !c.expired.load(Ordering::Relaxed) {
+                        crate::performance::elapsed(
+                            "remote.command_queue",
+                            c.queued_at.elapsed(),
+                            0,
+                        );
+                        let _timing = crate::performance::Span::new("remote.command_apply");
                         let reply = crate::remote::handle_command(self, c.value);
                         let _ = c.reply.try_send(reply);
                     }
@@ -294,13 +309,24 @@ impl AppController {
                 if self.remote.is_some()
                     && self.last_remote_publish.elapsed() >= Duration::from_millis(100)
                 {
+                    let publish_start = Instant::now();
                     let state = self.remote_state();
                     if let Some(remote) = &self.remote {
                         let _ = remote.publish(&state, &self.score_cache);
                     }
                     self.last_remote_publish = Instant::now();
+                    if publish_start.elapsed() >= Duration::from_millis(50) {
+                        crate::performance::elapsed(
+                            "remote.publish_slow",
+                            publish_start.elapsed(),
+                            0,
+                        );
+                    }
                 }
             }
+        }
+        if poll_started.elapsed() >= Duration::from_millis(50) {
+            crate::performance::elapsed("controller.poll_slow", poll_started.elapsed(), 0);
         }
         std::mem::take(&mut self.events)
     }
@@ -330,6 +356,7 @@ impl AppController {
                 request,
                 action: Action::Close,
                 follow: FollowUp::None,
+                queued_at: Instant::now(),
             });
             self.state.transition = Some("close".into());
             self.status("正在保存工程并退出…");

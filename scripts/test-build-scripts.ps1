@@ -44,6 +44,25 @@ function Remove-FixtureLink([string]$Path){
     [IO.Directory]::Delete($resolved)
 }
 try {
+    Run-Check '项目源码单文件不超过 1000 行' {
+        $root=Join-Path $fixtureRoot 'line-limit'
+        $source=Join-Path $root 'src\example.rs'
+        New-Item -ItemType Directory -Path (Split-Path -Parent $source) -Force | Out-Null
+        [IO.File]::WriteAllLines($source,[string[]]@((1..1000 | ForEach-Object {'// line'})),[Text.UTF8Encoding]::new($false))
+        Assert-SourceLineLimit -Root $root
+        [IO.File]::AppendAllText($source,"// one more line`n",[Text.UTF8Encoding]::new($false))
+        $error=Assert-Fails {Assert-SourceLineLimit -Root $root}
+        Assert-True ($error.Message.Contains('example.rs')) '超长源码未被检查出来。'
+    }
+    Run-Check '源码目录无曲库时仍建立空便携曲库' {
+        $root=Join-Path $fixtureRoot 'missing-samples'
+        New-Item -ItemType Directory -Path $root | Out-Null
+        $source=Join-Path $root 'samples'
+        $destination=Join-Path $root 'portable\samples'
+        Copy-OptionalSamples -Source $source -Destination $destination
+        Assert-True (Test-Path -LiteralPath $destination -PathType Container) '缺少空便携曲库目录。'
+        Assert-True (@(Get-ChildItem -LiteralPath $destination -Force).Count -eq 0) '空曲库被填入了本机数据。'
+    }
     Run-Check '版本选择默认不更新且非法输入可重试' {
         $current='2.0.0-alpha.1'
         foreach($inputValue in @('', '   ', $current)) {

@@ -1,12 +1,14 @@
 口琴工坊 · Rust / WinUI 3
 
-启动：双击 HarmonicaStudio.exe。
+启动：双击 HarmonicaStudio.exe，并允许 Windows 管理员权限提示；取消后不继续启动。
+桌面主程序每次启动自动使用“高于正常”优先级；若设置失败，继续运行并在 data/logs 中记录错误。
 移动：请复制整个 HarmonicaStudio 文件夹。
 program 保存程序、运行组件及资源，请勿单独移动或删除。
 
 默认 samples 是曲库，data 保存设置、工程、恢复记录和导出。
 设置中可以选择外部曲库。HARMONICA_STUDIO_HOME 可指定个人数据目录。
 本版本不需要安装 Python。
+卡顿排查：复现选歌停顿后，查看 data/logs 下本次启动对应的 performance-*.jsonl；其中记录各阶段耗时，不包含曲名或连接凭据。
 
 1. 打开 MIDI，在“曲谱”页选择声部和转换参数，点击“生成曲谱”。
 2. 在“编辑与试听”拖动音符调整时间和音高，拖动右边缘修改时长。

@@ -2,6 +2,7 @@ use super::*;
 
 impl AppController {
     pub(super) fn load_preview(&mut self) -> Result<()> {
+        let _timing = crate::performance::Span::new("preview.open_audio");
         let result = self.state.result.as_ref().context("请先生成试听")?;
         self.audio.load(&result.folder.join("试听.wav"))?;
         self.state.preview_duration = self.audio.duration();

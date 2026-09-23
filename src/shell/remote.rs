@@ -15,6 +15,7 @@ use std::{
     time::{Duration, Instant},
 };
 pub struct RemoteCommand {
+    pub queued_at: Instant,
     pub value: Value,
     pub expired: Arc<AtomicBool>,
     pub reply: mpsc::SyncSender<Value>,
@@ -672,9 +673,11 @@ fn handle_request(
         Err(_) => return error(stream, 400, "操作格式不正确。"),
     };
     let (tx, rx) = mpsc::sync_channel(1);
+    let _timing = crate::performance::Span::new("remote.command_reply");
     let expired = Arc::new(AtomicBool::new(false));
     if queue
         .try_send(RemoteCommand {
+            queued_at: Instant::now(),
             value,
             expired: expired.clone(),
             reply: tx,
@@ -687,6 +690,7 @@ fn handle_request(
         Ok(v) => v,
         Err(_) => {
             expired.store(true, Ordering::Relaxed);
+            crate::performance::elapsed("remote.command_timeout", Duration::from_secs(3), 0);
             json!({"ok":false,"message":"电脑暂时没有响应，请稍后再试。"})
         }
     };

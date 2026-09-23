@@ -57,6 +57,32 @@ function Assert-NoPython([string]$Root = $ProjectRoot, [switch]$WholeTree) {
     $forbidden = @($sourceFiles | Where-Object { $_.Extension -in '.py','.pyc','.pyo','.pyw','.pyd' -or $_.Name -match '^(python|pypy).*\.(exe|dll)$' })
     if ($forbidden.Count) { throw "发现 $($forbidden.Count) 个禁止的解释器或源码文件。" }
 }
+function Assert-SourceLineLimit([string]$Root = $ProjectRoot, [int]$Limit = 1000) {
+    $rootPath = [IO.Path]::GetFullPath($Root).TrimEnd('\','/')
+    Assert-NoLinksInPath $rootPath
+    # Check maintained project code; generated windows-rs bindings follow their upstream generator.
+    $extensions = @('.rs','.ps1','.js','.ts','.tsx','.css','.html','.ahk','.cmd','.bat','.cs','.cpp','.h','.xaml')
+    $files = @(Get-ChildItem -LiteralPath $rootPath -File -Force | Where-Object { $_.Extension -in $extensions })
+    foreach ($folder in @('src','tests','scripts','assets')) {
+        $path = Join-Path $rootPath $folder
+        if (Get-ExistingItem $path) {
+            $files += @(Get-TreeFilesNoLinks $path | Where-Object { $_.Extension -in $extensions })
+        }
+    }
+    foreach ($file in $files) {
+        $reader = [IO.File]::OpenText($file.FullName)
+        try {
+            $lines = 0
+            while ($null -ne $reader.ReadLine()) {
+                $lines++
+                if ($lines -gt $Limit) {
+                    $relative = $file.FullName.Substring($rootPath.Length).TrimStart('\','/')
+                    throw "源码文件超过 $Limit 行：$relative"
+                }
+            }
+        } finally { $reader.Dispose() }
+    }
+}
 function Get-ReactorNugetPackages {
     @(
         [PSCustomObject]@{Name='Microsoft.WindowsAppSDK.Runtime';Version='2.5.1'},
@@ -129,6 +155,18 @@ function Copy-CheckedTree([string]$Source, [string]$Destination) {
         New-Item -ItemType Directory -Path ([IO.Path]::GetDirectoryName($target)) -Force | Out-Null
         Copy-Item -LiteralPath $file.FullName -Destination $target -Force
     }
+}
+function Copy-OptionalSamples([string]$Source, [string]$Destination) {
+    Assert-NoLinksInPath $Source
+    Assert-NoLinksInPath $Destination
+    $item = Get-ExistingItem $Source
+    if (-not $item) {
+        # A source-only checkout has no tracked songs or samples directory.
+        New-Item -ItemType Directory -Path $Destination -Force | Out-Null
+        return
+    }
+    if (-not $item.PSIsContainer) { throw '曲库来源不是目录。' }
+    Copy-CheckedTree $Source $Destination
 }
 function Get-PortableRuntimeNames {
     $runtimeList = Join-Path $ProjectRoot 'third_party\windows-rs\crates\libs\reactor-setup\assets\runtime.txt'

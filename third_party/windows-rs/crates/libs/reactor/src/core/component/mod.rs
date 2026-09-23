@@ -579,6 +579,15 @@ impl ComponentTimer {
         sender: LocalSender<M>,
         message: M,
     ) -> windows_core::Result<Self> {
+        Self::start_observed(delay, sender, message, || {})
+    }
+
+    fn start_observed<M: 'static>(
+        delay: Duration,
+        sender: LocalSender<M>,
+        message: M,
+        on_fire: impl FnOnce() + 'static,
+    ) -> windows_core::Result<Self> {
         let interval = TimeSpan::try_from(delay).map_err(|_| {
             windows_core::Error::new(
                 windows_core::HRESULT(0x80070057_u32 as _),
@@ -595,10 +604,14 @@ impl ComponentTimer {
         let callback_timer = timer.clone();
         let callback_control = Arc::clone(&control);
         let message = RefCell::new(Some(message));
+        let on_fire = RefCell::new(Some(on_fire));
         *tick.borrow_mut() = Some(timer.Tick(move |_, _| {
             _ = callback_timer.Stop();
             if let Some(tick) = callback_tick.upgrade() {
                 tick.borrow_mut().take();
+            }
+            if let Some(on_fire) = on_fire.borrow_mut().take() {
+                on_fire();
             }
             if let Some(message) = message.borrow_mut().take()
                 && callback_control.queue()
@@ -996,6 +1009,17 @@ impl<C: Component> ComponentContext<C> {
         message: C::Message,
     ) -> windows_core::Result<ComponentTimer> {
         ComponentTimer::start(delay, self.sender.clone(), message)
+    }
+
+    /// Starts a one-shot timer and calls `on_fire` on the UI thread immediately
+    /// before queuing its message. The callback must remain short.
+    pub fn set_timeout_observed(
+        &self,
+        delay: Duration,
+        message: C::Message,
+        on_fire: impl FnOnce() + 'static,
+    ) -> windows_core::Result<ComponentTimer> {
+        ComponentTimer::start_observed(delay, self.sender.clone(), message, on_fire)
     }
 
     /// Starts scope-owned work on the Windows thread pool.

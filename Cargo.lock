@@ -193,7 +193,7 @@ dependencies = [
 
 [[package]]
 name = "harmonica-studio"
-version = "2.1.17"
+version = "2.1.23"
 dependencies = [
  "anyhow",
  "clap",

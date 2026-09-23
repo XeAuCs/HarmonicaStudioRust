@@ -7,6 +7,7 @@ Assert-NoLinksInPath $LogDirectory
 New-Item -ItemType Directory -Path $LogDirectory -Force | Out-Null
 if (-not $NoBanner) { Write-Host "口琴工坊 · 自动检查`n" }
 Assert-NoPython
+Assert-SourceLineLimit
 Push-Location $ProjectRoot
 try {
     if (-not $CoreOnly) { $null=Ensure-ReactorNugetCache }

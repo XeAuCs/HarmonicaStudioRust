@@ -2,9 +2,16 @@ use super::*;
 
 impl Studio {
     pub(super) fn handle_message(&mut self, message: Message, context: &ComponentContext<Self>) {
+        let message_started = Instant::now();
         let mut should_redraw = true;
         match message {
             Message::Tick => {
+                if let Some(fired) = self.timer_fired_at.take() {
+                    let wait = fired.elapsed();
+                    if wait >= Duration::from_millis(50) {
+                        crate::performance::elapsed("ui.timer.message_wait", wait, 0);
+                    }
+                }
                 if let Some(c) = self.controller.as_mut() {
                     let events = c.poll();
                     if events
@@ -490,6 +497,9 @@ impl Studio {
         if should_redraw {
             self.invalidator.invalidate();
             self.timeline_invalidator.invalidate();
+        }
+        if message_started.elapsed() >= Duration::from_millis(50) {
+            crate::performance::elapsed("ui.message_slow", message_started.elapsed(), 0);
         }
     }
 }

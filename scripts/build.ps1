@@ -78,7 +78,7 @@ try {
         if($item.PSIsContainer) {Copy-CheckedTree $runtimeFile (Join-Path $program $name)}
         else {Assert-NoLinksInPath $runtimeFile; Copy-Item -LiteralPath $runtimeFile -Destination $program}
     }
-    Copy-CheckedTree (Join-Path $ProjectRoot 'samples') (Join-Path $portable 'samples')
+    Copy-OptionalSamples (Join-Path $ProjectRoot 'samples') (Join-Path $portable 'samples')
     Copy-CheckedTree (Join-Path $ProjectRoot 'assets') (Join-Path $program 'assets')
     Copy-CheckedTree (Join-Path $ProjectRoot 'third_party\AutoHotkey') (Join-Path $program 'third_party\AutoHotkey')
     foreach($name in @('LICENSE','THIRD_PARTY.md','使用说明.txt')) {

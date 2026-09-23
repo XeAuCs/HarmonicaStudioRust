@@ -58,6 +58,26 @@ struct ClientRect {
 unsafe extern "system" {
     fn GetClientRect(window: Hwnd, rect: *mut ClientRect) -> i32;
     fn GetDpiForWindow(window: Hwnd) -> u32;
+    fn IsWindow(window: Hwnd) -> i32;
+    fn IsIconic(window: Hwnd) -> i32;
+    fn IsWindowVisible(window: Hwnd) -> i32;
+}
+pub(super) enum WindowVisibility {
+    Visible,
+    Minimized,
+    Hidden,
+    Unknown,
+}
+pub(super) fn window_visibility(window: Hwnd) -> WindowVisibility {
+    if window.is_null() || unsafe { IsWindow(window) } == 0 {
+        WindowVisibility::Unknown
+    } else if unsafe { IsIconic(window) } != 0 {
+        WindowVisibility::Minimized
+    } else if unsafe { IsWindowVisible(window) } == 0 {
+        WindowVisibility::Hidden
+    } else {
+        WindowVisibility::Visible
+    }
 }
 pub(super) fn read_client_size(window: Hwnd) -> Option<(f64, f64)> {
     if window.is_null() {
